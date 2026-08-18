@@ -38,6 +38,27 @@ export class CaptionTask {
       this.logger.warn('[CaptionTask]: Could not press "c" to enable captions', err);
     }
 
+    // Try to set language to Spanish Mexico via the UI
+    try {
+      await this.page.waitForTimeout(2000);
+      // Move mouse to center to reveal the control bar
+      await this.page.mouse.move(500, 500);
+      await this.page.waitForTimeout(1000);
+      
+      await this.page.locator('button[aria-label="Más opciones"], button[aria-label="More options"]').first().click({ timeout: 5000 });
+      await this.page.waitForTimeout(1000);
+      await this.page.locator('li:has-text("Subtítulos"), li:has-text("Captions")').first().click({ timeout: 5000 });
+      await this.page.waitForTimeout(1000);
+      await this.page.locator('div[role="dialog"] div[role="combobox"]').first().click({ timeout: 5000 });
+      await this.page.waitForTimeout(1000);
+      await this.page.locator('li[role="option"]:has-text("Español (México)"), li[role="option"]:has-text("Spanish (Mexico)")').first().click({ timeout: 5000 });
+      await this.page.waitForTimeout(1000);
+      await this.page.locator('button:has-text("Aplicar"), button:has-text("Apply")').first().click({ timeout: 5000 });
+      this.logger.info('[CaptionTask]: Successfully set captions language to Español (México) via UI');
+    } catch (err) {
+      this.logger.warn('[CaptionTask]: Could not set captions language via UI (might already be set)', err);
+    }
+
     // Also look for CC button in bottom control bar
     try {
       const ccButton = this.page.locator('button[aria-label*="caption" i], button[aria-label*="subtítulo" i], button[data-tooltip*="caption" i], button[data-tooltip*="subtítulo" i]').first();
@@ -64,24 +85,28 @@ export class CaptionTask {
       }
 
       function scanForCaptions() {
-        // Find all caption text spans directly to avoid scraping UI menus
-        const textElements = document.querySelectorAll('.CNusmb, span[jsname="YSxPC"]');
+        // More robust selector to catch ANY potential caption classes in Google Meet
+        const textElements = document.querySelectorAll('.CNusmb, .Vb82nd, span[jsname="YSxPC"], div[jsname="tX9u1b"] span');
 
         textElements.forEach((textEl) => {
+          // IMPORTANT: Avoid matching the language selection menu!
+          if (textEl.closest('div[role="menu"]') || textEl.closest('div[role="listbox"]') || textEl.closest('div[role="dialog"]')) return;
+
           // Find the container block for this speaker
-          const block = textEl.closest('div[jsname="YSxPC"]') || textEl.parentElement?.parentElement || textEl.parentElement;
+          const block = textEl.closest('div[jsname="YSxPC"]') || textEl.closest('div.a4cQT') || textEl.parentElement?.parentElement || textEl.parentElement;
           if (!block) return;
 
           // Find the speaker name
           const speakerEl = block.querySelector('.zs75Bi, .KcIKs, div[jsname="SKb2ee"]') ||
                             block.previousElementSibling?.querySelector('.zs75Bi, .KcIKs, div[jsname="SKb2ee"]');
-          const speakerName = speakerEl?.textContent?.trim() || 'Participante';
+          let speakerName = speakerEl?.textContent?.trim() || 'Participante';
 
           const fullText = textEl.textContent?.trim() || '';
 
-          if (fullText) {
+          if (fullText && fullText.length > 2) {
              const lastText = (textEl as any).__meetBotLastText || '';
-             if (fullText !== lastText && fullText !== speakerName) {
+             // Ensure it's an actual caption update and not just the speaker name
+             if (fullText !== lastText && !speakerName.includes(fullText) && !fullText.includes(speakerName)) {
                 (window as any).__meetBotRecordCaption(secretId, getLocalTime(), speakerName, fullText);
                 (textEl as any).__meetBotLastText = fullText;
              }
