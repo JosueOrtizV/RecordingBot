@@ -100,7 +100,7 @@ export class GoogleDriveStorageProvider implements StorageProvider {
     const today = new Date().toISOString().split('T')[0];
     const dateFolderId = await this.getOrCreateFolder(today, rootId);
 
-    const fileName = path.basename(filePath);
+    const fileName = path.basename(key) || path.basename(filePath);
 
     // 3. Upload main file (video/webm or mp4)
     const fileMetadata: drive_v3.Schema$File = {
@@ -130,8 +130,9 @@ export class GoogleDriveStorageProvider implements StorageProvider {
     if (fs.existsSync(transcriptPath)) {
       logger.info(`GoogleDriveStorageProvider: Found accompanying transcript at ${transcriptPath}, uploading...`);
       try {
+        const niceBaseWithoutExt = path.basename(key, path.extname(key)) || baseWithoutExt;
         const transcriptMeta: drive_v3.Schema$File = {
-          name: `${baseWithoutExt}_transcripcion.txt`,
+          name: `${niceBaseWithoutExt}_transcripcion.txt`,
           parents: [dateFolderId],
         };
         const transcriptMedia = {

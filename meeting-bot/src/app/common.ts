@@ -13,6 +13,7 @@ export interface MeetingJoinParams {
   timezone: string;
   botId?: string;
   eventId?: string;
+  meetingTitle?: string;
 }
 
 export interface MeetingJoinRedisParams extends MeetingJoinParams {

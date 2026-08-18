@@ -20,7 +20,8 @@ const joinGoogleMeet = async (req: Request, res: Response) => {
     timezone,
     userId,
     eventId,
-    botId
+    botId,
+    meetingTitle
   }: MeetingJoinParams = req.body;
 
   // Validate required fields
@@ -49,7 +50,7 @@ const joinGoogleMeet = async (req: Request, res: Response) => {
       const entityId = botId ?? eventId;
       const tempId = `${userId}${entityId}0`; // Using 0 as retry count
       const tempFileId = encodeFileNameSafebase64(tempId);
-      const namePrefix = getRecordingNamePrefix('google');
+      const namePrefix = meetingTitle ? meetingTitle : getRecordingNamePrefix('google');
 
       const uploader: IUploader = await DiskUploader.initialize(
         bearerToken,

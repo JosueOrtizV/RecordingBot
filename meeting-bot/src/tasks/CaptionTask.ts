@@ -40,7 +40,7 @@ export class CaptionTask {
 
     // Also look for CC button in bottom control bar
     try {
-      const ccButton = this.page.locator('button[aria-label*="caption" i], button[aria-label*="subtítulo" i]').first();
+      const ccButton = this.page.locator('button[aria-label*="caption" i], button[aria-label*="subtítulo" i], button[data-tooltip*="caption" i], button[data-tooltip*="subtítulo" i]').first();
       if (await ccButton.isVisible({ timeout: 2000 }).catch(() => false)) {
         const isPressed = await ccButton.getAttribute('aria-pressed');
         if (isPressed !== 'true') {
@@ -65,18 +65,18 @@ export class CaptionTask {
 
       function scanForCaptions() {
         // Selector 1: Standard Google Meet caption blocks
-        const captionBlocks = document.querySelectorAll('div[jsname="YSxPC"], div[jscontroller="M31Ksd"], .nMm5Fd');
+        const captionBlocks = document.querySelectorAll('div[jsname="YSxPC"], div[jscontroller="M31Ksd"], .nMm5Fd, div[jsname="tgaKEf"], .a4cQT, .bj4p3b');
 
         captionBlocks.forEach((block) => {
-          const speakerEl = block.querySelector('div[jsname="V67aGc"], .zs75Bi, .NWp8re, .TBMuR') ||
-                            block.previousElementSibling?.querySelector('.zs75Bi');
+          const speakerEl = block.querySelector('div[jsname="V67aGc"], div[jsname="SKb2ee"], .zs75Bi, .NWp8re, .TBMuR, .KcIKs') ||
+                            block.previousElementSibling?.querySelector('.zs75Bi, .KcIKs, div[jsname="SKb2ee"]');
           const speakerName = speakerEl?.textContent?.trim() || 'Participante';
 
-          const textEls = block.querySelectorAll('span[jsname="YSxPC"], .CNusmb, span');
+          const textEls = block.querySelectorAll('span[jsname="YSxPC"], .CNusmb, span.Vbnxy, span');
           let fullText = '';
           textEls.forEach((t) => {
             const str = t.textContent?.trim() || '';
-            if (str && !fullText.includes(str)) {
+            if (str && !fullText.includes(str) && str !== speakerName) {
               fullText += ' ' + str;
             }
           });

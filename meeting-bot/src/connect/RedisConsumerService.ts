@@ -142,7 +142,7 @@ export class RedisConsumerService {
         const entityId = meetingParams.botId ?? meetingParams.eventId;
         const tempId = `${meetingParams.userId}${entityId}0`; // Using 0 as retry count
         const tempFileId = encodeFileNameSafebase64(tempId);
-        const namePrefix = getRecordingNamePrefix(meetingParams.provider);
+        const namePrefix = meetingParams.meetingTitle ? meetingParams.meetingTitle : getRecordingNamePrefix(meetingParams.provider);
 
         const uploader: IUploader = await DiskUploader.initialize(
           meetingParams.bearerToken,
