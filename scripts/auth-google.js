@@ -1,7 +1,22 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { google } = require('googleapis');
+
+let google;
+try {
+  google = require('googleapis').google;
+} catch {
+  try {
+    google = require(path.resolve(__dirname, '../scheduler/node_modules/googleapis')).google;
+  } catch {
+    try {
+      google = require(path.resolve(__dirname, '../meeting-bot/node_modules/googleapis')).google;
+    } catch {
+      console.error('❌ Error: No se encontró el módulo googleapis. Ejecuta "npm install" en la carpeta scheduler.');
+      process.exit(1);
+    }
+  }
+}
 
 const CREDENTIALS_PATH = path.resolve(__dirname, '../credentials.json');
 const TOKEN_PATH = path.resolve(__dirname, '../token.json');
