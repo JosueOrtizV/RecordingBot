@@ -77,7 +77,7 @@ export default {
   activateInactivityDetectionAfter: process.env.INACTIVITY_DETECTION_START_DELAY_MINUTES ? Number(process.env.INACTIVITY_DETECTION_START_DELAY_MINUTES) :  1,
   loneParticipantExitDelaySeconds: process.env.LONE_PARTICIPANT_EXIT_DELAY_SECONDS ? Number(process.env.LONE_PARTICIPANT_EXIT_DELAY_SECONDS) : 10,
   serviceKey: process.env.SCREENAPP_BACKEND_SERVICE_API_KEY,
-  joinWaitTime: process.env.JOIN_WAIT_TIME_MINUTES ? Number(process.env.JOIN_WAIT_TIME_MINUTES) : 10,
+  joinWaitTime: process.env.JOIN_WAIT_TIME_MINUTES ? Number(process.env.JOIN_WAIT_TIME_MINUTES) : 15,
   // Number of retries for transient errors (not applied to WaitingAtLobbyRetryError)
   retryCount: process.env.RETRY_COUNT ? Number(process.env.RETRY_COUNT) : 2,
   teamsPrewarmEnabled: process.env.TEAMS_PREWARM_ENABLED === 'true',
