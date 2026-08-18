@@ -102,6 +102,23 @@ export class GoogleDriveStorageProvider implements StorageProvider {
 
     const fileName = path.basename(key) || path.basename(filePath);
 
+    // 2.5. Fix webm metadata using ffmpeg if it's a webm file
+    let finalFilePath = filePath;
+    if (filePath.endsWith('.webm') || contentType.includes('webm')) {
+      logger.info(`GoogleDriveStorageProvider: Fixing webm metadata for ${filePath} using ffmpeg...`);
+      const fixedFilePath = `${filePath}.fixed.webm`;
+      try {
+        const { execSync } = require('child_process');
+        execSync(`ffmpeg -y -i "${filePath}" -c copy "${fixedFilePath}"`, { stdio: 'ignore' });
+        if (fs.existsSync(fixedFilePath)) {
+          finalFilePath = fixedFilePath;
+          logger.info(`GoogleDriveStorageProvider: Successfully fixed webm metadata.`);
+        }
+      } catch (err) {
+        logger.warn(`GoogleDriveStorageProvider: ffmpeg failed to fix webm, falling back to original:`, err);
+      }
+    }
+
     // 3. Upload main file (video/webm or mp4)
     const fileMetadata: drive_v3.Schema$File = {
       name: fileName,
@@ -110,7 +127,7 @@ export class GoogleDriveStorageProvider implements StorageProvider {
 
     const media = {
       mimeType: contentType,
-      body: fs.createReadStream(filePath),
+      body: fs.createReadStream(finalFilePath),
     };
 
     const response = await drive.files.create({
@@ -147,6 +164,14 @@ export class GoogleDriveStorageProvider implements StorageProvider {
         logger.info(`GoogleDriveStorageProvider: Transcript uploaded successfully! ID: ${tRes.data.id}`);
       } catch (tErr) {
         logger.warn('GoogleDriveStorageProvider: Could not upload transcript .txt:', tErr);
+      }
+    }
+    
+    if (finalFilePath !== filePath && fs.existsSync(finalFilePath)) {
+      try {
+        fs.unlinkSync(finalFilePath);
+      } catch (e) {
+        logger.warn(`Could not delete temporary fixed webm file: ${e}`);
       }
     }
 
