@@ -371,7 +371,7 @@ export class GoogleMeetBot extends MeetBotBase {
             let botWasDeniedAccess = false;
 
             try {
-              peopleElement = await this.page.locator('button[aria-label^="People"], button[aria-label^="Personen"]').first().isVisible({ timeout: 500 }).catch(() => false);
+              peopleElement = await this.page.locator('button[aria-label^="People"], button[aria-label^="Personen"], button[aria-label^="Personas"]').first().isVisible({ timeout: 500 }).catch(() => false);
             } catch(e) {
               this._logger.error(
                 'wait error', { error: e }
@@ -380,7 +380,7 @@ export class GoogleMeetBot extends MeetBotBase {
             }
 
             try {
-              callButtonElement = await this.page.locator('button[aria-label="Leave call"], button[aria-label="Anruf verlassen"]').first().isVisible({ timeout: 500 }).catch(() => false);
+              callButtonElement = await this.page.locator('button[aria-label="Leave call"], button[aria-label="Anruf verlassen"], button[aria-label="Abandonar la llamada"]').first().isVisible({ timeout: 500 }).catch(() => false);
             } catch(e) {
               this._logger.error(
                 'wait error', { error: e }
@@ -407,11 +407,11 @@ export class GoogleMeetBot extends MeetBotBase {
                   const participantCountDetected = await this.page.evaluate(() => {
                     try {
                       // Look for People button with participant count
-                      const peopleButton = document.querySelector('button[aria-label^="People"]');
+                      const peopleButton = document.querySelector('button[aria-label^="People"], button[aria-label^="Personen"], button[aria-label^="Personas"]');
                       if (peopleButton) {
                         const ariaLabel = peopleButton.getAttribute('aria-label');
                         // Check if we can see participant count (e.g., "People - 2 joined")
-                        const match = ariaLabel?.match(/People.*?(\d+)/);
+                        const match = ariaLabel?.match(/(?:People|Personen|Personas).*?(\d+)/);
                         if (match && parseInt(match[1]) >= 1) {
                           return true;
                         }
@@ -421,7 +421,7 @@ export class GoogleMeetBot extends MeetBotBase {
                       const allButtons = Array.from(document.querySelectorAll('button'));
                       for (const btn of allButtons) {
                         const label = btn.getAttribute('aria-label');
-                        if (label && /People.*?\d+/.test(label)) {
+                        if (label && /(?:People|Personen|Personas).*?\d+/.test(label)) {
                           return true;
                         }
                       }
@@ -433,18 +433,22 @@ export class GoogleMeetBot extends MeetBotBase {
                           bodyText.includes('people in the call') ||
                           bodyText.includes('Du nimmst an diesem Anruf teil') ||
                           bodyText.includes('Der Anruf hat einen weiteren Teilnehmer') ||
-                          bodyText.includes('Teilnehmer sind beigetreten')) {
+                          bodyText.includes('Teilnehmer sind beigetreten') ||
+                          bodyText.includes('Se unieron participantes externos') ||
+                          bodyText.includes('Estás en la llamada') ||
+                          bodyText.includes('Detalles de la reunión')) {
                         return true;
                       }
 
                       // Fallback: Check for Leave call button which indicates we're in a call
-                      const leaveCallButton = document.querySelector('button[aria-label="Leave call"], button[aria-label="Anruf verlassen"]');
+                      const leaveCallButton = document.querySelector('button[aria-label="Leave call"], button[aria-label="Anruf verlassen"], button[aria-label="Abandonar la llamada"]');
                       if (leaveCallButton) {
                         // If we have Leave call button AND no lobby mode text, we're likely in the call
                         const hasLobbyText = bodyText.includes('Asking to join') ||
                                             bodyText.includes('You\'re the only one here') ||
                                             bodyText.includes('Teilnahme erbitten') ||
-                                            bodyText.includes('Bitte warten Sie, bis Sie vom Organisator');
+                                            bodyText.includes('Bitte warten Sie, bis Sie vom Organisator') ||
+                                            bodyText.includes('Solicitando unirse');
                         if (!hasLobbyText) {
                           return true;
                         }
