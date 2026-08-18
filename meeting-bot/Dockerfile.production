@@ -61,7 +61,7 @@ COPY --chown=nodejs:nodejs auto_launch_protocols.json /etc/opt/chrome/policies/m
 COPY package*.json ./
 
 # Install all dependencies (including dev dependencies for build)
-RUN npm ci && npm cache clean --force
+RUN npm install && npm cache clean --force
 
 # Install Playwright and its dependencies
 RUN npx playwright install --with-deps
