@@ -16,13 +16,23 @@ export class TranscriptFormatter {
 
     if (!cleanText) return;
 
-    // Check if we can append to the previous entry from the same speaker if within same time window
     const lastEntry = this.entries[this.entries.length - 1];
     if (lastEntry && lastEntry.speaker.toLowerCase() === cleanSpeaker.toLowerCase()) {
-      if (!lastEntry.text.endsWith(cleanText) && !cleanText.startsWith(lastEntry.text)) {
-        lastEntry.text += ' ' + cleanText;
+      if (cleanText === lastEntry.text) {
+        return; // Exact duplicate
+      }
+      if (cleanText.startsWith(lastEntry.text)) {
+        // The new text is an expansion of the last text (Google Meet live caption updating)
+        lastEntry.text = cleanText;
         return;
       }
+      if (lastEntry.text.endsWith(cleanText)) {
+        // The new text is a substring of what we already have (sometimes happens with overlapping mutations)
+        return;
+      }
+      // If it's completely new text from the same speaker, just append it
+      lastEntry.text += ' ' + cleanText;
+      return;
     }
 
     this.entries.push({

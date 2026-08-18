@@ -92,8 +92,13 @@ export class GoogleMeetBot extends MeetBotBase {
 
     this.page = await createBrowserContext(url, this._correlationId, 'google');
 
+    // Force Spanish Mexico UI language so captions default to Spanish Mexico
+    const meetUrl = new URL(url);
+    meetUrl.searchParams.set('hl', 'es-MX');
+    const finalUrl = meetUrl.toString();
+
     this._logger.info('Navigating to Google Meet URL...');
-    await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+    await this.page.goto(finalUrl, { waitUntil: 'domcontentloaded' });
 
     const nameInputSelector = 'input[type="text"]';
     const clickContinueWithoutDevicesIfPresent = async (timeout = 5000) => {
@@ -183,7 +188,7 @@ export class GoogleMeetBot extends MeetBotBase {
             teamId
           });
 
-          await this.page.goto(url, { waitUntil: 'domcontentloaded' });
+          await this.page.goto(finalUrl, { waitUntil: 'domcontentloaded' });
 
           try {
             await waitForPreJoinReady();

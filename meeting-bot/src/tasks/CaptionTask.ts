@@ -64,28 +64,27 @@ export class CaptionTask {
       }
 
       function scanForCaptions() {
-        // Selector 1: Standard Google Meet caption blocks
-        const captionBlocks = document.querySelectorAll('div[jsname="YSxPC"], div[jscontroller="M31Ksd"], .nMm5Fd, div[jsname="tgaKEf"], .a4cQT, .bj4p3b');
+        // Find all caption text spans directly to avoid scraping UI menus
+        const textElements = document.querySelectorAll('.CNusmb, span[jsname="YSxPC"]');
 
-        captionBlocks.forEach((block) => {
-          const speakerEl = block.querySelector('div[jsname="V67aGc"], div[jsname="SKb2ee"], .zs75Bi, .NWp8re, .TBMuR, .KcIKs') ||
+        textElements.forEach((textEl) => {
+          // Find the container block for this speaker
+          const block = textEl.closest('div[jsname="YSxPC"]') || textEl.parentElement?.parentElement || textEl.parentElement;
+          if (!block) return;
+
+          // Find the speaker name
+          const speakerEl = block.querySelector('.zs75Bi, .KcIKs, div[jsname="SKb2ee"]') ||
                             block.previousElementSibling?.querySelector('.zs75Bi, .KcIKs, div[jsname="SKb2ee"]');
           const speakerName = speakerEl?.textContent?.trim() || 'Participante';
 
-          const textEls = block.querySelectorAll('span[jsname="YSxPC"], .CNusmb, span.Vbnxy, span');
-          let fullText = '';
-          textEls.forEach((t) => {
-            const str = t.textContent?.trim() || '';
-            if (str && !fullText.includes(str) && str !== speakerName) {
-              fullText += ' ' + str;
-            }
-          });
+          const fullText = textEl.textContent?.trim() || '';
 
-          fullText = fullText.trim();
-
-          if (fullText && !processedElements.has(block)) {
-            (window as any).__meetBotRecordCaption(secretId, getLocalTime(), speakerName, fullText);
-            processedElements.add(block);
+          if (fullText) {
+             const lastText = (textEl as any).__meetBotLastText || '';
+             if (fullText !== lastText && fullText !== speakerName) {
+                (window as any).__meetBotRecordCaption(secretId, getLocalTime(), speakerName, fullText);
+                (textEl as any).__meetBotLastText = fullText;
+             }
           }
         });
       }
