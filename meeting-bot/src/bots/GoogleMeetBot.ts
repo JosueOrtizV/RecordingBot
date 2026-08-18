@@ -891,11 +891,11 @@ export class GoogleMeetBot extends MeetBotBase {
               function findPeopleButton() {
                 try {
                   // 1. Try to locate using attribute "starts with"
-                  let btn: Element | null | undefined = document.querySelector('button[aria-label^="People -"], button[aria-label^="Personen -"]');
+                  let btn: Element | null | undefined = document.querySelector('button[aria-label^="People -"], button[aria-label^="Personen -"], button[aria-label^="Personas -"]');
                   if (btn) return btn;
 
                   // 2. Try to locate using attribute "contains"
-                  btn = document.querySelector('button[aria-label*="People"], button[aria-label*="Personen"]');
+                  btn = document.querySelector('button[aria-label*="People"], button[aria-label*="Personen"], button[aria-label*="Personas"]');
                   if (btn) return btn;
 
                   // 3. Try via aria-labelledby pointing to element with "People" text
@@ -904,7 +904,7 @@ export class GoogleMeetBot extends MeetBotBase {
                     const labelledBy = b.getAttribute('aria-labelledby');
                     if (labelledBy) {
                       const labelElement = document.getElementById(labelledBy);
-                      if (labelElement && ['People', 'Personen'].includes(labelElement.textContent?.trim() || '')) {
+                      if (labelElement && ['People', 'Personen', 'Personas'].includes(labelElement.textContent?.trim() || '')) {
                         return true;
                       }
                     }
@@ -916,7 +916,7 @@ export class GoogleMeetBot extends MeetBotBase {
                   const allBtnsWithLabel = Array.from(document.querySelectorAll('button[aria-label]'));
                   btn = allBtnsWithLabel.find(b => {
                     const label = b.getAttribute('aria-label');
-                    return label && (/^People - \d+ joined$/.test(label) || /^Personen - \d+/.test(label));
+                    return label && (/^People - \d+ joined$/.test(label) || /^Personen - \d+/.test(label) || /^Personas - \d+/.test(label));
                   });
                   if (btn) return btn;
 
@@ -1231,8 +1231,12 @@ export class GoogleMeetBot extends MeetBotBase {
                 }
 
                 // Check for basic Google Meet UI elements
-                const hasMeetElements = document.querySelector('button[aria-label="People"], button[aria-label^="People -"], button[aria-label="Personen"], button[aria-label^="Personen -"]') !== null ||
-                                      document.querySelector('button[aria-label="Leave call"], button[aria-label="Anruf verlassen"]') !== null;
+                const hasMeetElements = document.querySelector('button[aria-label="People"], button[aria-label^="People -"], button[aria-label="Personen"], button[aria-label^="Personen -"], button[aria-label="Personas"], button[aria-label^="Personas -"]') !== null ||
+                                      document.querySelector('button[aria-label="Leave call"], button[aria-label="Anruf verlassen"], button[aria-label="Abandonar la llamada"], button[aria-label="Salir de la llamada"]') !== null ||
+                                      document.body.innerText.includes('Detalles de la reunión') ||
+                                      document.body.innerText.includes('Estás en la llamada') ||
+                                      document.querySelector('[data-allocation-index]') !== null ||
+                                      document.querySelector('[jscontroller="k3jTEB"]') !== null;
 
                 if (!hasMeetElements) {
                   console.warn('Google Meet UI elements not found - page may have changed state');
