@@ -223,6 +223,8 @@ export class GoogleMeetBot extends MeetBotBase {
               'Ask to join',
               'Join now',
               'Join anyway',
+              'Solicitar unirse',
+              'Unirse ahora',
               'Teilnahme erbitten',
               'Jetzt teilnehmen',
               'Trotzdem teilnehmen',
