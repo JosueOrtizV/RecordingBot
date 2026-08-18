@@ -1,0 +1,90 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - recordingbot_net
+
+  chrome-cdp:
+    platform: linux/amd64
+    build:
+      context: ./meeting-bot
+      dockerfile: Dockerfile.chrome-cdp
+    shm_size: "1gb"
+    expose:
+      - "9223"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9223/json/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      - recordingbot_net
+
+  meeting-bot:
+    platform: linux/amd64
+    build:
+      context: ./meeting-bot
+      dockerfile: Dockerfile.production
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=redis
+      - GOOGLE_CHROME_CDP_URL=http://chrome-cdp:9223
+      - GOOGLE_CREDENTIALS_PATH=/app/credentials.json
+      - GOOGLE_TOKEN_PATH=/app/token.json
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./credentials.json:/app/credentials.json:ro
+      - ./token.json:/app/token.json
+      - ./recordings:/app/dist/_tempvideo
+    depends_on:
+      redis:
+        condition: service_healthy
+      chrome-cdp:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - recordingbot_net
+
+  scheduler:
+    build:
+      context: ./scheduler
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=redis
+      - GOOGLE_CREDENTIALS_PATH=/app/credentials.json
+      - GOOGLE_TOKEN_PATH=/app/token.json
+    volumes:
+      - ./credentials.json:/app/credentials.json:ro
+      - ./token.json:/app/token.json
+      - /root/scripts/telegram_alert.sh:/root/scripts/telegram_alert.sh:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      meeting-bot:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - recordingbot_net
+
+networks:
+  recordingbot_net:
+    driver: bridge
+
+volumes:
+  redis_data:
