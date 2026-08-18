@@ -19,9 +19,13 @@ jobs:
             mkdir -p /var/www/RecordingBot
             cd /var/www/RecordingBot
             
+            export GIT_SSH_COMMAND="ssh -i /root/.ssh/id_ed25519_recordingbot -o IdentitiesOnly=yes"
+            
             if [ ! -d ".git" ]; then
               git clone git@github.com:${{ github.repository }}.git .
+              git config core.sshCommand "ssh -i /root/.ssh/id_ed25519_recordingbot -o IdentitiesOnly=yes"
             else
+              git config core.sshCommand "ssh -i /root/.ssh/id_ed25519_recordingbot -o IdentitiesOnly=yes"
               git fetch origin main || git fetch origin master
               git reset --hard origin/main || git reset --hard origin/master
             fi
