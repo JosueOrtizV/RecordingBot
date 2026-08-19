@@ -30,13 +30,26 @@ export class CaptionTask {
       // Ignore if already exposed
     });
 
+    // Close any obstructing dialogs (like "No microphone found" warnings)
+    try {
+        const closeButtons = this.page.locator('button[aria-label*="errar"], button[aria-label*="lose"]');
+        const count = await closeButtons.count();
+        for (let i = 0; i < count; i++) {
+             if (await closeButtons.nth(i).isVisible({ timeout: 500 }).catch(()=>false)) {
+                 await closeButtons.nth(i).click({ timeout: 1000 });
+                 this.logger.info('[CaptionTask]: Closed obstructing dialog');
+             }
+        }
+        await this.page.keyboard.press('Escape'); // Also try escape
+    } catch (err) {}
+
     // Move mouse to center to reveal the control bar
     await this.page.mouse.move(500, 500).catch(() => {});
     await this.page.waitForTimeout(1000);
 
     // 1. Try to turn on captions if not already on
     try {
-      const ccButton = this.page.locator('button[jsname="RrG0hf"], button[aria-label*="caption" i], button[aria-label*="subtítulo" i]').first();
+      const ccButton = this.page.locator('button[jsname="RrG0hf"], button[aria-label*="caption" i], button[aria-label*="ubt" i]').first();
       if (await ccButton.isVisible({ timeout: 2000 }).catch(() => false)) {
         const isPressed = await ccButton.getAttribute('aria-pressed');
         if (isPressed !== 'true') {
@@ -58,23 +71,24 @@ export class CaptionTask {
       this.logger.info('[CaptionTask]: Attempting to set language to Spanish (Mexico)...');
       await this.page.waitForTimeout(1500);
       
-      const configButton = this.page.locator('button[aria-label="Más opciones"], button[aria-label="More options"], button[jsname="V67aGc"]').first();
+      // Use sub-strings without accents to avoid encoding corruption issues
+      const configButton = this.page.locator('button[aria-label*="opciones" i], button[aria-label*="options" i], button[jsname="V67aGc"]').first();
       if (await configButton.count() > 0) {
           await configButton.click({ timeout: 5000 });
           await this.page.waitForTimeout(1000);
 
-          const settingsOption = this.page.locator('li[aria-label="Configuración"], li[aria-label="Settings"]').first();
+          const settingsOption = this.page.locator('li[aria-label*="onfiguraci" i], li[aria-label*="ettings" i]').first();
           if (await settingsOption.count() > 0) {
               await settingsOption.click({ timeout: 5000 });
               await this.page.waitForTimeout(1000);
 
-              const captionsTab = this.page.locator('div[role="tab"], li, button').filter({ hasText: /Subtítulos|Captions/i }).first();
+              const captionsTab = this.page.locator('div[role="tab"], li, button').filter({ hasText: /ubt|aption/i }).first();
               if (await captionsTab.count() > 0) {
                   await captionsTab.click({ timeout: 5000 });
                   await this.page.waitForTimeout(1000);
 
                   // Buscar el dropdown de idioma
-                  const langCombo = this.page.locator('div[role="combobox"][aria-label*="Idioma"], div[role="combobox"][aria-label*="language"]').first();
+                  const langCombo = this.page.locator('div[role="combobox"][aria-label*="dioma" i], div[role="combobox"][aria-label*="anguage" i]').first();
                   if (await langCombo.count() > 0) {
                       await langCombo.click({ timeout: 5000 });
                       await this.page.waitForTimeout(1000);
@@ -83,7 +97,7 @@ export class CaptionTask {
                       const esMxOption = this.page.locator('li[role="option"][data-value="es-MX"]').first();
                       if (await esMxOption.count() > 0) {
                           await esMxOption.click({ timeout: 5000 });
-                          this.logger.info('[CaptionTask]: Successfully set captions language to Español (México) via UI');
+                          this.logger.info('[CaptionTask]: Successfully set captions language to es-MX via UI');
                       }
                   }
                   
@@ -110,8 +124,8 @@ export class CaptionTask {
       function scanForCaptions() {
         let textElements: Element[] = Array.from(document.querySelectorAll('.CNusmb, .Vb82nd, span[jsname="YSxPC"], div[jsname="tX9u1b"] span'));
         
-        // Target new Meet CC interface regions
-        const captionRegions = document.querySelectorAll('div[aria-label="Subtítulos"], div[aria-label="Captions"]');
+        // Target new Meet CC interface regions (using substring to avoid accent mismatch in JS evaluation)
+        const captionRegions = document.querySelectorAll('div[aria-label*="ubt"], div[aria-label*="aption"]');
         captionRegions.forEach(region => {
            const leaves = Array.from(region.querySelectorAll('*')).filter(el => {
               const tag = el.tagName.toLowerCase();
