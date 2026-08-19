@@ -30,47 +30,70 @@ export class CaptionTask {
       // Ignore if already exposed
     });
 
+    // Move mouse to center to reveal the control bar
+    await this.page.mouse.move(500, 500).catch(() => {});
+    await this.page.waitForTimeout(1000);
+
     // 1. Try to turn on captions if not already on
     try {
-      await this.page.keyboard.press('c');
-      this.logger.info('[CaptionTask]: Pressed "c" key to enable closed captions');
-    } catch (err) {
-      this.logger.warn('[CaptionTask]: Could not press "c" to enable captions', err);
-    }
-
-    // Try to set language to Spanish Mexico via the UI
-    try {
-      await this.page.waitForTimeout(2000);
-      // Move mouse to center to reveal the control bar
-      await this.page.mouse.move(500, 500);
-      await this.page.waitForTimeout(1000);
-      
-      await this.page.locator('button[aria-label="Más opciones"], button[aria-label="More options"]').first().click({ timeout: 5000 });
-      await this.page.waitForTimeout(1000);
-      await this.page.locator('li:has-text("Subtítulos"), li:has-text("Captions")').first().click({ timeout: 5000 });
-      await this.page.waitForTimeout(1000);
-      await this.page.locator('div[role="dialog"] div[role="combobox"]').first().click({ timeout: 5000 });
-      await this.page.waitForTimeout(1000);
-      await this.page.locator('li[role="option"]:has-text("Español (México)"), li[role="option"]:has-text("Spanish (Mexico)")').first().click({ timeout: 5000 });
-      await this.page.waitForTimeout(1000);
-      await this.page.locator('button:has-text("Aplicar"), button:has-text("Apply")').first().click({ timeout: 5000 });
-      this.logger.info('[CaptionTask]: Successfully set captions language to Español (México) via UI');
-    } catch (err) {
-      this.logger.warn('[CaptionTask]: Could not set captions language via UI (might already be set)', err);
-    }
-
-    // Also look for CC button in bottom control bar
-    try {
-      const ccButton = this.page.locator('button[aria-label*="caption" i], button[aria-label*="subtítulo" i], button[data-tooltip*="caption" i], button[data-tooltip*="subtítulo" i]').first();
+      const ccButton = this.page.locator('button[jsname="RrG0hf"], button[aria-label*="caption" i], button[aria-label*="subtítulo" i]').first();
       if (await ccButton.isVisible({ timeout: 2000 }).catch(() => false)) {
         const isPressed = await ccButton.getAttribute('aria-pressed');
         if (isPressed !== 'true') {
           await ccButton.click({ timeout: 3000 });
           this.logger.info('[CaptionTask]: Clicked Closed Captions toggle button');
+        } else {
+          this.logger.info('[CaptionTask]: Closed Captions already active');
         }
+      } else {
+        await this.page.keyboard.press('c');
+        this.logger.info('[CaptionTask]: Pressed "c" key to enable closed captions');
       }
     } catch (err) {
-      this.logger.debug('[CaptionTask]: Button CC toggle skipped or already active');
+      this.logger.warn('[CaptionTask]: Could not enable captions', err);
+    }
+
+    // Try to set language to Spanish Mexico via the UI
+    try {
+      this.logger.info('[CaptionTask]: Attempting to set language to Spanish (Mexico)...');
+      await this.page.waitForTimeout(1500);
+      
+      const configButton = this.page.locator('button[aria-label="Más opciones"], button[aria-label="More options"], button[jsname="V67aGc"]').first();
+      if (await configButton.count() > 0) {
+          await configButton.click({ timeout: 5000 });
+          await this.page.waitForTimeout(1000);
+
+          const settingsOption = this.page.locator('li[aria-label="Configuración"], li[aria-label="Settings"]').first();
+          if (await settingsOption.count() > 0) {
+              await settingsOption.click({ timeout: 5000 });
+              await this.page.waitForTimeout(1000);
+
+              const captionsTab = this.page.locator('div[role="tab"], li, button').filter({ hasText: /Subtítulos|Captions/i }).first();
+              if (await captionsTab.count() > 0) {
+                  await captionsTab.click({ timeout: 5000 });
+                  await this.page.waitForTimeout(1000);
+
+                  // Buscar el dropdown de idioma
+                  const langCombo = this.page.locator('div[role="combobox"][aria-label*="Idioma"], div[role="combobox"][aria-label*="language"]').first();
+                  if (await langCombo.count() > 0) {
+                      await langCombo.click({ timeout: 5000 });
+                      await this.page.waitForTimeout(1000);
+
+                      // Click Spanish (Mexico)
+                      const esMxOption = this.page.locator('li[role="option"][data-value="es-MX"]').first();
+                      if (await esMxOption.count() > 0) {
+                          await esMxOption.click({ timeout: 5000 });
+                          this.logger.info('[CaptionTask]: Successfully set captions language to Español (México) via UI');
+                      }
+                  }
+                  
+                  // Close settings dialog
+                  await this.page.keyboard.press('Escape');
+              }
+          }
+      }
+    } catch (err) {
+      this.logger.warn('[CaptionTask]: Could not set captions language via UI (might already be set)', err);
     }
 
     // 2. Inject DOM MutationObserver into page
@@ -85,21 +108,46 @@ export class CaptionTask {
       }
 
       function scanForCaptions() {
-        // More robust selector to catch ANY potential caption classes in Google Meet
-        const textElements = document.querySelectorAll('.CNusmb, .Vb82nd, span[jsname="YSxPC"], div[jsname="tX9u1b"] span');
+        let textElements: Element[] = Array.from(document.querySelectorAll('.CNusmb, .Vb82nd, span[jsname="YSxPC"], div[jsname="tX9u1b"] span'));
+        
+        // Target new Meet CC interface regions
+        const captionRegions = document.querySelectorAll('div[aria-label="Subtítulos"], div[aria-label="Captions"]');
+        captionRegions.forEach(region => {
+           const leaves = Array.from(region.querySelectorAll('*')).filter(el => {
+              const tag = el.tagName.toLowerCase();
+              if (tag === 'svg' || tag === 'path' || tag === 'button' || tag === 'img') return false;
+              // Add only leaf nodes that contain text (or elements whose children are just text)
+              return el.children.length === 0 && (el.textContent || '').trim().length > 0;
+           });
+           textElements = textElements.concat(leaves as Element[]);
+        });
 
         textElements.forEach((textEl) => {
           // IMPORTANT: Avoid matching the language selection menu!
           if (textEl.closest('div[role="menu"]') || textEl.closest('div[role="listbox"]') || textEl.closest('div[role="dialog"]')) return;
 
-          // Find the container block for this speaker
-          const block = textEl.closest('div[jsname="YSxPC"]') || textEl.closest('div.a4cQT') || textEl.parentElement?.parentElement || textEl.parentElement;
-          if (!block) return;
-
-          // Find the speaker name
-          const speakerEl = block.querySelector('.zs75Bi, .KcIKs, div[jsname="SKb2ee"]') ||
-                            block.previousElementSibling?.querySelector('.zs75Bi, .KcIKs, div[jsname="SKb2ee"]');
-          let speakerName = speakerEl?.textContent?.trim() || 'Participante';
+          // Find the container block for this speaker (old UI and new UI generic fallback)
+          let block = textEl.closest('div[jsname="YSxPC"]') || textEl.closest('div.a4cQT') || textEl.closest('div.DtJ7e');
+          
+          // In the new UI, speaker name is sometimes a sibling or uncle. Let's look up a few levels.
+          let speakerName = 'Participante';
+          let curr: any = textEl;
+          for(let i=0; i<4; i++) {
+            if(!curr) break;
+            const speakerEl = curr.querySelector?.('.zs75Bi, .KcIKs, div[jsname="SKb2ee"], img[alt]') ||
+                              curr.previousElementSibling?.querySelector?.('.zs75Bi, .KcIKs, div[jsname="SKb2ee"], img[alt]') ||
+                              curr.previousElementSibling;
+            
+            // if we found an img with alt (avatar), the alt text usually contains the name
+            if (speakerEl?.tagName?.toLowerCase() === 'img' && speakerEl.getAttribute('alt')) {
+                speakerName = speakerEl.getAttribute('alt') || 'Participante';
+                break;
+            } else if (speakerEl?.textContent && speakerEl.textContent.trim().length > 0 && speakerEl.textContent.trim().length < 50) {
+                speakerName = speakerEl.textContent.trim();
+                break;
+            }
+            curr = curr.parentElement;
+          }
 
           const fullText = textEl.textContent?.trim() || '';
 
