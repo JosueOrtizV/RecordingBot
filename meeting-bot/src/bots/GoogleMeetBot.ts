@@ -441,14 +441,16 @@ export class GoogleMeetBot extends MeetBotBase {
                       }
 
                       // Fallback: Check for Leave call button which indicates we're in a call
-                      const leaveCallButton = document.querySelector('button[aria-label="Leave call"], button[aria-label="Anruf verlassen"], button[aria-label="Abandonar la llamada"]');
+                      const leaveCallButton = document.querySelector('button[aria-label*="Leave call"], button[aria-label*="Anruf verlassen"], button[aria-label*="Abandonar la llamada"]');
                       if (leaveCallButton) {
                         // If we have Leave call button AND no lobby mode text, we're likely in the call
                         const hasLobbyText = bodyText.includes('Asking to join') ||
                                             bodyText.includes('You\'re the only one here') ||
                                             bodyText.includes('Teilnahme erbitten') ||
                                             bodyText.includes('Bitte warten Sie, bis Sie vom Organisator') ||
-                                            bodyText.includes('Solicitando unirse');
+                                            bodyText.includes('Solicitando unirse') ||
+                                            bodyText.includes('Espera a que') ||
+                                            bodyText.includes('You will join the call when');
                         if (!hasLobbyText) {
                           return true;
                         }
