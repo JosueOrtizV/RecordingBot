@@ -79,8 +79,8 @@ export class CaptionTask {
       this.logger.info('[CaptionTask]: Attempting to set language to Spanish (Mexico)...');
       await this.page.waitForTimeout(1500);
       
-      // Use sub-strings without accents to avoid encoding corruption issues
-      const configButton = this.page.locator('button[aria-label*="opciones" i], button[aria-label*="options" i], button[jsname="V67aGc"]').first();
+      // Click the main control bar's More Options, ignoring the bot's own video tile options
+      const configButton = this.page.locator('button[aria-label="Más opciones" i], button[aria-label="More options" i], button[jsname="NakZHc"]').first();
       if (await configButton.count() > 0) {
           await configButton.click({ timeout: 5000 });
           await this.page.waitForTimeout(1500); // Wait for menu to fully open
@@ -151,69 +151,55 @@ export class CaptionTask {
       }
 
       function scanForCaptions() {
-        let textElements: Element[] = Array.from(document.querySelectorAll('.CNusmb, .Vb82nd, span[jsname="YSxPC"], div[jsname="tX9u1b"] span'));
-        
-        // Target new Meet CC interface regions (using substring to avoid accent mismatch in JS evaluation)
+        // Target new Meet CC interface regions
         const captionRegions = document.querySelectorAll('div[aria-label*="ubt"], div[aria-label*="aption"]');
-        
-        // DEBUG DUMP CAPTIONS DOM
-        if (captionRegions.length > 0) {
-           (window as any).captionDomDumpCount = ((window as any).captionDomDumpCount || 0) + 1;
-           if ((window as any).captionDomDumpCount === 1) { // Dump only once
-              console.log("MEET_DOM_DUMP: " + captionRegions[0].outerHTML);
-           }
-        }
 
         captionRegions.forEach(region => {
-           const leaves = Array.from(region.querySelectorAll('*')).filter(el => {
-              const tag = el.tagName.toLowerCase();
-              if (tag === 'svg' || tag === 'path' || tag === 'button' || tag === 'img') return false;
-              // Add only leaf nodes that contain text (or elements whose children are just text)
-              return el.children.length === 0 && (el.textContent || '').trim().length > 0;
+           // Google Meet updates blocks of text per speaker.
+           const blocks = region.querySelectorAll('.nMcdL, div.a4cQT, div.DtJ7e');
+           blocks.forEach(block => {
+               let speakerName = 'Participante';
+               // Get speaker name from the new UI (.NWpY1d) or old UI
+               const nameEl = block.querySelector('.NWpY1d, .zs75Bi, .KcIKs, div[jsname="SKb2ee"]');
+               if (nameEl && nameEl.textContent) {
+                   speakerName = nameEl.textContent.trim();
+               } else {
+                   // Fallback to searching for an image with alt text inside the block
+                   const imgEl = block.querySelector('img[alt]');
+                   if (imgEl && imgEl.getAttribute('alt')) {
+                       speakerName = imgEl.getAttribute('alt') || 'Participante';
+                   }
+               }
+
+               // Get caption text from the new UI (.ygicle) or old UI
+               const textEl = block.querySelector('.ygicle, .iTTPOb, div[jsname="YSxPC"]');
+               if (textEl && textEl.textContent) {
+                   const fullText = textEl.textContent.trim();
+                   if (fullText && fullText.length > 2) {
+                       const lastText = (block as any).__meetBotLastText || '';
+                       if (fullText !== lastText) {
+                           (block as any).__meetBotLastText = fullText;
+                           
+                           let blockId = block.getAttribute('data-meetbot-id');
+                           if (!blockId) {
+                               blockId = 'cap_' + Math.random().toString(36).substring(2);
+                               block.setAttribute('data-meetbot-id', blockId);
+                           }
+
+                           try {
+                               // @ts-ignore
+                               window.__meetBotRecordCaption(
+                                   secretId,
+                                   getLocalTime(),
+                                   speakerName,
+                                   fullText,
+                                   blockId
+                               );
+                           } catch (e) {}
+                       }
+                   }
+               }
            });
-           textElements = textElements.concat(leaves as Element[]);
-        });
-
-        textElements.forEach((textEl) => {
-          // IMPORTANT: Avoid matching the language selection menu!
-          if (textEl.closest('div[role="menu"]') || textEl.closest('div[role="listbox"]') || textEl.closest('div[role="dialog"]')) return;
-
-          // Find the container block for this speaker (old UI and new UI generic fallback)
-          let block = textEl.closest('div[jsname="YSxPC"]') || textEl.closest('div.a4cQT') || textEl.closest('div.DtJ7e');
-          
-          // In the new UI, speaker name is sometimes a sibling or uncle. Let's look up a few levels.
-          let speakerName = 'Participante';
-          let curr: any = textEl;
-          for(let i=0; i<4; i++) {
-            if(!curr) break;
-            const speakerEl = curr.querySelector?.('.zs75Bi, .KcIKs, div[jsname="SKb2ee"], img[alt]') ||
-                              curr.previousElementSibling?.querySelector?.('.zs75Bi, .KcIKs, div[jsname="SKb2ee"], img[alt]') ||
-                              curr.previousElementSibling;
-            
-            // if we found an img with alt (avatar), the alt text usually contains the name
-            if (speakerEl?.tagName?.toLowerCase() === 'img' && speakerEl.getAttribute('alt')) {
-                speakerName = speakerEl.getAttribute('alt') || 'Participante';
-                break;
-            } else if (speakerEl?.textContent && speakerEl.textContent.trim().length > 0 && speakerEl.textContent.trim().length < 50) {
-                speakerName = speakerEl.textContent.trim();
-                break;
-            }
-            curr = curr.parentElement;
-          }
-
-          const fullText = textEl.textContent?.trim() || '';
-          if (fullText === speakerName) return; // Skip the leaf that is actually just the speaker's name
-
-          if (fullText && fullText.length > 2) {
-             const lastText = (textEl as any).__meetBotLastText || '';
-             
-             if (!(textEl as any).__meetBotElementId) {
-                (textEl as any).__meetBotElementId = Math.random().toString(36).substring(2, 15);
-             }
-             const elementId = (textEl as any).__meetBotElementId;
-
-             // Ensure it's an actual caption update and not just the speaker name
-             if (fullText !== lastText && !speakerName.includes(fullText) && !fullText.includes(speakerName)) {
                 (window as any).__meetBotRecordCaption(secretId, getLocalTime(), speakerName, fullText, elementId);
                 (textEl as any).__meetBotLastText = fullText;
              }
