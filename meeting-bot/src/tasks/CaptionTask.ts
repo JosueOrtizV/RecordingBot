@@ -200,10 +200,6 @@ export class CaptionTask {
                    }
                }
            });
-                (window as any).__meetBotRecordCaption(secretId, getLocalTime(), speakerName, fullText, elementId);
-                (textEl as any).__meetBotLastText = fullText;
-             }
-          }
         });
       }
 
