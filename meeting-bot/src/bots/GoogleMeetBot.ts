@@ -672,41 +672,54 @@ export class GoogleMeetBot extends MeetBotBase {
       if (await chatButton.count() > 0) {
         await chatButton.click({ timeout: 5000, force: true });
         
-        // Find the chat input area and WAIT for it to appear
-        const textarea = this.page.locator('textarea[aria-label*="mensaje" i], textarea[aria-label*="message" i], textarea').first();
-        try {
-          await textarea.waitFor({ state: 'attached', timeout: 8000 });
-          const isVisible = await textarea.isVisible().catch(() => false);
-          
-          if (isVisible) {
-            const messageText = `Hola, soy ${botName || 'el asistente'}. Estoy grabando y transcribiendo esta llamada para generar una minuta automática.`;
-            await textarea.fill(messageText);
-            await this.page.waitForTimeout(500);
-            
-            // Press Enter to send
-            await this.page.keyboard.press('Enter');
-            
-            // Also try clicking the send button if available
-            const sendButton = this.page.locator('button[aria-label*="Enviar" i], button[aria-label*="Send" i], button i:has-text("send")').first();
-            if (await sendButton.count() > 0 && await sendButton.isEnabled().catch(() => false)) {
-              await sendButton.click({ timeout: 2000, force: true }).catch(() => null);
-            }
+        // Wait for the panel animation to finish
+        await this.page.waitForTimeout(2000);
+        
+        // Find ALL textareas and look for the one that is actually visible on screen
+        const textareas = this.page.locator('textarea');
+        const count = await textareas.count();
+        let targetTextarea = null;
 
-            this._logger.info('[ChatNotification]: Successfully sent recording disclaimer to chat');
-            await this.page.waitForTimeout(1000);
-
-            // Close the chat panel to restore clean UI view
-            const closeChatButton = this.page.locator('button[aria-label*="Cerrar" i], button[aria-label*="Close" i]').first();
-            if (await closeChatButton.count() > 0 && await closeChatButton.isVisible().catch(() => false)) {
-              await closeChatButton.click({ timeout: 2000, force: true }).catch(() => null);
-            } else {
-              await chatButton.click({ timeout: 2000, force: true }).catch(() => null);
-            }
-          } else {
-             this._logger.warn('[ChatNotification]: Chat textarea attached but not visible');
+        for (let i = 0; i < count; i++) {
+          const ta = textareas.nth(i);
+          const isVis = await ta.isVisible().catch(() => false);
+          if (isVis) {
+            targetTextarea = ta;
+            break;
           }
-        } catch (e) {
-          this._logger.warn('[ChatNotification]: Chat textarea never appeared within timeout', e);
+        }
+
+        if (targetTextarea) {
+          const messageText = `Hola, soy ${botName || 'el asistente'}. Estoy grabando y transcribiendo esta llamada para generar una minuta automática.`;
+          await targetTextarea.fill(messageText);
+          await this.page.waitForTimeout(500);
+          
+          // Press Enter to send
+          await this.page.keyboard.press('Enter');
+          
+          // Also try clicking the send button if available
+          const sendButton = this.page.locator('button[aria-label*="Enviar" i], button[aria-label*="Send" i], button i:has-text("send")').first();
+          if (await sendButton.count() > 0 && await sendButton.isEnabled().catch(() => false)) {
+            await sendButton.click({ timeout: 2000, force: true }).catch(() => null);
+          }
+
+          this._logger.info('[ChatNotification]: Successfully sent recording disclaimer to chat');
+          await this.page.waitForTimeout(1000);
+
+          // Close the chat panel to restore clean UI view
+          const closeChatButton = this.page.locator('button[aria-label*="Cerrar" i], button[aria-label*="Close" i]').first();
+          if (await closeChatButton.count() > 0 && await closeChatButton.isVisible().catch(() => false)) {
+            await closeChatButton.click({ timeout: 2000, force: true }).catch(() => null);
+          } else {
+            await chatButton.click({ timeout: 2000, force: true }).catch(() => null);
+          }
+        } else {
+          // Fallback: Dump the DOM to see what the chat input actually is
+          try {
+             const domHtml = await this.page.evaluate(() => document.body.innerHTML);
+             require('fs').writeFileSync('/usr/src/app/dist/_tempvideo/chat_dump.html', domHtml);
+             this._logger.warn('[ChatNotification]: Chat textarea not found. Dumped DOM to chat_dump.html');
+          } catch(e) {}
         }
       } else {
         this._logger.warn('[ChatNotification]: Chat button not found on control bar');
