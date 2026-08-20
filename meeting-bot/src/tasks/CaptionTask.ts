@@ -202,6 +202,7 @@ export class CaptionTask {
           }
 
           const fullText = textEl.textContent?.trim() || '';
+          if (fullText === speakerName) return; // Skip the leaf that is actually just the speaker's name
 
           if (fullText && fullText.length > 2) {
              const lastText = (textEl as any).__meetBotLastText || '';
