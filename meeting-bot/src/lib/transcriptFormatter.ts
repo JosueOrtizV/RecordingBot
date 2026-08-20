@@ -5,29 +5,41 @@ export interface CaptionEntry {
   timestamp: string; // HH:MM:SS
   speaker: string;
   text: string;
+  elementId?: string;
 }
 
 export class TranscriptFormatter {
   private entries: CaptionEntry[] = [];
 
-  addEntry(timestamp: string, speaker: string, text: string) {
+  addEntry(timestamp: string, speaker: string, text: string, elementId?: string) {
     const cleanSpeaker = (speaker || 'Participante Desconocido').trim();
     const cleanText = (text || '').trim();
 
     if (!cleanText) return;
 
+    if (elementId) {
+      // Search backwards (up to 20 lines) to find the same element being updated
+      for (let i = this.entries.length - 1; i >= Math.max(0, this.entries.length - 20); i--) {
+        if (this.entries[i].elementId === elementId) {
+           this.entries[i].text = cleanText;
+           this.entries[i].timestamp = timestamp;
+           return;
+        }
+      }
+    }
+
     const lastEntry = this.entries[this.entries.length - 1];
-    if (lastEntry && lastEntry.speaker.toLowerCase() === cleanSpeaker.toLowerCase()) {
+    
+    // If no elementId system is available, use heuristic fallback
+    if (lastEntry && lastEntry.speaker.toLowerCase() === cleanSpeaker.toLowerCase() && !elementId) {
       if (cleanText === lastEntry.text) {
         return; // Exact duplicate
       }
       if (cleanText.startsWith(lastEntry.text)) {
-        // The new text is an expansion of the last text (Google Meet live caption updating)
         lastEntry.text = cleanText;
         return;
       }
       if (lastEntry.text.endsWith(cleanText)) {
-        // The new text is a substring of what we already have (sometimes happens with overlapping mutations)
         return;
       }
       // If it's completely new text from the same speaker, just append it
@@ -39,6 +51,7 @@ export class TranscriptFormatter {
       timestamp,
       speaker: cleanSpeaker,
       text: cleanText,
+      elementId,
     });
   }
 
@@ -52,8 +65,26 @@ export class TranscriptFormatter {
     lines.push(`  TRANSCRIPCIÓN DE REUNIÓN - ${new Date().toLocaleDateString('es-MX')}`);
     lines.push('=====================================================\n');
 
+    let currentSpeaker = '';
+    let currentSpeakerLines: string[] = [];
+    let currentTimestamp = '';
+
+    // Advanced formatting: Group by speaker sequentially
     for (const entry of this.entries) {
-      lines.push(`[${entry.timestamp}] ${entry.speaker}: ${entry.text}`);
+      if (entry.speaker !== currentSpeaker) {
+        if (currentSpeakerLines.length > 0) {
+          lines.push(`[${currentTimestamp}] ${currentSpeaker}: ${currentSpeakerLines.join(' ')}`);
+        }
+        currentSpeaker = entry.speaker;
+        currentTimestamp = entry.timestamp;
+        currentSpeakerLines = [entry.text];
+      } else {
+        currentSpeakerLines.push(entry.text);
+      }
+    }
+    
+    if (currentSpeakerLines.length > 0) {
+      lines.push(`[${currentTimestamp}] ${currentSpeaker}: ${currentSpeakerLines.join(' ')}`);
     }
 
     return lines.join('\n') + '\n';

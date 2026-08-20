@@ -23,9 +23,9 @@ export class CaptionTask {
     this.logger.info('[CaptionTask]: Initializing Closed Captions extractor for Google Meet (Spanish)...');
 
     // Expose Node.js receiver to browser context
-    await this.page.exposeFunction('__meetBotRecordCaption', (secretId: string, timestamp: string, speaker: string, text: string) => {
+    await this.page.exposeFunction('__meetBotRecordCaption', (secretId: string, timestamp: string, speaker: string, text: string, elementId: string) => {
       if (secretId !== this.secretId) return;
-      this.formatter.addEntry(timestamp, speaker, text);
+      this.formatter.addEntry(timestamp, speaker, text, elementId);
     }).catch(() => {
       // Ignore if already exposed
     });
@@ -167,9 +167,15 @@ export class CaptionTask {
 
           if (fullText && fullText.length > 2) {
              const lastText = (textEl as any).__meetBotLastText || '';
+             
+             if (!(textEl as any).__meetBotElementId) {
+                (textEl as any).__meetBotElementId = Math.random().toString(36).substring(2, 15);
+             }
+             const elementId = (textEl as any).__meetBotElementId;
+
              // Ensure it's an actual caption update and not just the speaker name
              if (fullText !== lastText && !speakerName.includes(fullText) && !fullText.includes(speakerName)) {
-                (window as any).__meetBotRecordCaption(secretId, getLocalTime(), speakerName, fullText);
+                (window as any).__meetBotRecordCaption(secretId, getLocalTime(), speakerName, fullText, elementId);
                 (textEl as any).__meetBotLastText = fullText;
              }
           }
