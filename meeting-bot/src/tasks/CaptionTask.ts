@@ -77,7 +77,7 @@ export class CaptionTask {
           await configButton.click({ timeout: 5000 });
           await this.page.waitForTimeout(1000);
 
-          const settingsOption = this.page.locator('li[aria-label*="onfiguraci" i], li[aria-label*="ettings" i]').first();
+          const settingsOption = this.page.locator('li, [role="menuitem"]').filter({ hasText: /onfiguraci|ettings/i }).first();
           if (await settingsOption.count() > 0) {
               await settingsOption.click({ timeout: 5000 });
               await this.page.waitForTimeout(1000);
@@ -88,13 +88,13 @@ export class CaptionTask {
                   await this.page.waitForTimeout(1000);
 
                   // Buscar el dropdown de idioma
-                  const langCombo = this.page.locator('div[role="combobox"][aria-label*="dioma" i], div[role="combobox"][aria-label*="anguage" i]').first();
+                  const langCombo = this.page.locator('div[role="combobox"]').first();
                   if (await langCombo.count() > 0) {
                       await langCombo.click({ timeout: 5000 });
                       await this.page.waitForTimeout(1000);
 
                       // Click Spanish (Mexico)
-                      const esMxOption = this.page.locator('li[role="option"][data-value="es-MX"], li[role="option"] span').filter({ hasText: /Espa|Mexic/i }).first();
+                      const esMxOption = this.page.locator('[role="option"]').filter({ hasText: /Espa|Mexic/i }).first();
                       if (await esMxOption.count() > 0) {
                           await esMxOption.click({ timeout: 5000 });
                           this.logger.info('[CaptionTask]: Successfully set captions language to es-MX via UI');
