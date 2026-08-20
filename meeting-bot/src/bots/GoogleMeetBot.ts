@@ -512,10 +512,12 @@ export class GoogleMeetBot extends MeetBotBase {
       if (!waitingAtLobbySuccess) {
         const bodyText = redirectedFromMeetBodyText ?? await this.page.evaluate(() => document.body.innerText);
 
-        const userDenied = (bodyText || '')?.includes(GOOGLE_REQUEST_DENIED);
+        const userDenied = (bodyText || '')?.includes(GOOGLE_REQUEST_DENIED) || (bodyText || '')?.includes('rechazó tu solicitud') || (bodyText || '')?.includes('not allowed to join');
+        const isWorkspaceHomepage = redirectedFromMeetUrl?.includes('workspace.google.com');
 
         this._logger.error('Cant finish wait at the lobby check', {
           userDenied,
+          isWorkspaceHomepage,
           waitingAtLobbySuccess,
           redirectedFromMeetUrl,
           lobbyRequestTimedOut,
@@ -524,7 +526,7 @@ export class GoogleMeetBot extends MeetBotBase {
           bodyText
         });
 
-        const shouldRetryJoinRequest = !userDenied &&
+        const shouldRetryJoinRequest = !userDenied && !isWorkspaceHomepage &&
           joinRequestAttempt < maxJoinRequestAttempts &&
           (Boolean(redirectedFromMeetUrl) || lobbyRequestTimedOut);
 
