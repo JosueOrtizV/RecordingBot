@@ -20,8 +20,8 @@ export class CaptionTask {
     this.page.on('console', msg => {
         if (msg.text().includes('MEET_DOM_DUMP: ')) {
            const dom = msg.text().substring(15);
-           require('fs').writeFileSync('/usr/src/app/dist/captions_dump.html', dom);
-           this.logger.info('[CaptionTask]: Dumped captions DOM to /usr/src/app/dist/captions_dump.html');
+           require('fs').writeFileSync('/usr/src/app/dist/_tempvideo/captions_dump.html', dom);
+           this.logger.info('[CaptionTask]: Dumped captions DOM to /usr/src/app/dist/_tempvideo/captions_dump.html');
         }
     });
 
@@ -88,11 +88,11 @@ export class CaptionTask {
           // DUMP DOM FOR DEBUGGING
           try {
              const buttonsHtml = await this.page.evaluate(() => {
-                 return Array.from(document.querySelectorAll('li, [role="menuitem"], button, div[role="menu"]')).map(el => el.outerHTML).join('\n');
+                return document.body.innerHTML;
              });
-             require('fs').writeFileSync('/usr/src/app/dist/menu_dump.html', buttonsHtml);
-             this.logger.info('[CaptionTask]: Successfully dumped menu DOM to /usr/src/app/dist/menu_dump.html');
-          } catch(e) {
+             require('fs').writeFileSync('/usr/src/app/dist/_tempvideo/menu_dump.html', buttonsHtml);
+             this.logger.info('[CaptionTask]: Successfully dumped menu DOM to /usr/src/app/dist/_tempvideo/menu_dump.html');
+          } catch (e) {
              this.logger.warn('[CaptionTask]: Failed to dump DOM', e);
           }
 
@@ -112,8 +112,8 @@ export class CaptionTask {
                       await langCombo.click({ timeout: 5000, force: true });
                       await this.page.waitForTimeout(1000);
 
-                      // Click Spanish (Mexico)
-                      const esMxOption = this.page.locator('[role="option"]').filter({ hasText: /Espa|Mexic/i }).first();
+                      // Click Spanish (Mexico) by specifically matching Mexico to avoid Catalan (Espana)
+                      const esMxOption = this.page.locator('[role="option"]').filter({ hasText: /México|Mexico/i }).first();
                       if (await esMxOption.count() > 0) {
                           await esMxOption.click({ timeout: 5000, force: true });
                           this.logger.info('[CaptionTask]: Successfully set captions language to es-MX via UI');
