@@ -17,6 +17,14 @@ export class CaptionTask {
   }
 
   async start(): Promise<void> {
+    this.page.on('console', msg => {
+        if (msg.text().includes('MEET_DOM_DUMP: ')) {
+           const dom = msg.text().substring(15);
+           require('fs').writeFileSync('/usr/src/app/dist/captions_dump.html', dom);
+           this.logger.info('[CaptionTask]: Dumped captions DOM to /usr/src/app/dist/captions_dump.html');
+        }
+    });
+
     if (this.isCapturing) return;
     this.isCapturing = true;
 
@@ -75,7 +83,18 @@ export class CaptionTask {
       const configButton = this.page.locator('button[aria-label*="opciones" i], button[aria-label*="options" i], button[jsname="V67aGc"]').first();
       if (await configButton.count() > 0) {
           await configButton.click({ timeout: 5000 });
-          await this.page.waitForTimeout(1000);
+          await this.page.waitForTimeout(1500); // Wait for menu to fully open
+
+          // DUMP DOM FOR DEBUGGING
+          try {
+             const buttonsHtml = await this.page.evaluate(() => {
+                 return Array.from(document.querySelectorAll('li, [role="menuitem"], button, div[role="menu"]')).map(el => el.outerHTML).join('\n');
+             });
+             require('fs').writeFileSync('/usr/src/app/dist/menu_dump.html', buttonsHtml);
+             this.logger.info('[CaptionTask]: Successfully dumped menu DOM to /usr/src/app/dist/menu_dump.html');
+          } catch(e) {
+             this.logger.warn('[CaptionTask]: Failed to dump DOM', e);
+          }
 
           const settingsOption = this.page.locator('li, [role="menuitem"]').filter({ hasText: /onfiguraci|ettings/i }).first();
           if (await settingsOption.count() > 0) {
@@ -136,6 +155,15 @@ export class CaptionTask {
         
         // Target new Meet CC interface regions (using substring to avoid accent mismatch in JS evaluation)
         const captionRegions = document.querySelectorAll('div[aria-label*="ubt"], div[aria-label*="aption"]');
+        
+        // DEBUG DUMP CAPTIONS DOM
+        if (captionRegions.length > 0) {
+           (window as any).captionDomDumpCount = ((window as any).captionDomDumpCount || 0) + 1;
+           if ((window as any).captionDomDumpCount === 1) { // Dump only once
+              console.log("MEET_DOM_DUMP: " + captionRegions[0].outerHTML);
+           }
+        }
+
         captionRegions.forEach(region => {
            const leaves = Array.from(region.querySelectorAll('*')).filter(el => {
               const tag = el.tagName.toLowerCase();
