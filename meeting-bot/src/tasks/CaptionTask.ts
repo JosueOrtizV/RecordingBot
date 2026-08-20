@@ -99,36 +99,59 @@ export class CaptionTask {
           const settingsOption = this.page.locator('li, [role="menuitem"]').filter({ hasText: /onfiguraci|ettings/i }).first();
           if (await settingsOption.count() > 0) {
               await settingsOption.click({ timeout: 5000, force: true });
-              await this.page.waitForTimeout(1000);
+              await this.page.waitForTimeout(1500);
 
-              const captionsTab = this.page.locator('div[role="tab"], li, button').filter({ hasText: /ubt|aption/i }).first();
-              if (await captionsTab.count() > 0) {
-                  await captionsTab.click({ timeout: 5000, force: true });
+              // 1. Click "Subtítulos" tab safely
+              const clickedTab = await this.page.evaluate(() => {
+                  const els = Array.from(document.querySelectorAll('*'));
+                  for (const el of els) {
+                      if (el.children.length === 0 && (el.textContent?.trim() === 'Subtítulos' || el.textContent?.trim() === 'Captions')) {
+                          const clickable = el.closest('div[role="tab"], li, button, div.VfPpkd-V67aGc, div.Gk2izd');
+                          if (clickable) {
+                              (clickable as HTMLElement).click();
+                              return true;
+                          }
+                      }
+                  }
+                  return false;
+              });
+
+              if (clickedTab) {
                   await this.page.waitForTimeout(1000);
 
-                  // Buscar el dropdown de idioma
-                  const langCombo = this.page.locator('div[role="combobox"]').first();
-                  if (await langCombo.count() > 0) {
-                      await langCombo.click({ timeout: 5000, force: true });
-                      await this.page.waitForTimeout(1000);
-
-                      // Click Spanish (Mexico) by specifically matching Mexico to avoid Catalan (Espana)
-                      const esMxOption = this.page.locator('[role="option"]').filter({ hasText: /México|Mexico/i }).first();
-                      if (await esMxOption.count() > 0) {
-                          await esMxOption.click({ timeout: 5000, force: true });
-                          this.logger.info('[CaptionTask]: Successfully set captions language to es-MX via UI');
-                      } else {
-                          this.logger.warn('[CaptionTask]: esMxOption not found');
+                  // 2. Click the language combobox (the first visible combobox)
+                  const clickedCombo = await this.page.evaluate(() => {
+                      const combos = document.querySelectorAll('div[role="combobox"]');
+                      for (const combo of Array.from(combos)) {
+                          if (combo.getBoundingClientRect().width > 0) {
+                              (combo as HTMLElement).click();
+                              return true;
+                          }
                       }
-                  } else {
-                      this.logger.warn('[CaptionTask]: langCombo not found');
+                      return false;
+                  });
+
+                  if (clickedCombo) {
+                      await this.page.waitForTimeout(1500);
+
+                      // 3. Click "Español (México)" option
+                      const clickedLang = await this.page.evaluate(() => {
+                          const options = document.querySelectorAll('[role="option"]');
+                          for (const opt of Array.from(options)) {
+                              if (opt.textContent && (opt.textContent.includes('México') || opt.textContent.includes('Mexico'))) {
+                                  (opt as HTMLElement).click();
+                                  return true;
+                              }
+                          }
+                          return false;
+                      });
+
+                      if (clickedLang) {
+                          console.log('[CaptionTask]: Successfully set language');
+                      }
                   }
-                  
-                  // Close settings dialog
-                  await this.page.keyboard.press('Escape');
-              } else {
-                  this.logger.warn('[CaptionTask]: captionsTab not found');
               }
+              await this.page.keyboard.press('Escape');
           } else {
               this.logger.warn('[CaptionTask]: settingsOption not found');
           }
