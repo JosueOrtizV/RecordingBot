@@ -657,14 +657,62 @@ export class GoogleMeetBot extends MeetBotBase {
 
     // Recording the meeting page
     this._logger.info('Begin recording...');
-    await this.recordMeetingPage({ teamId, eventId, userId, botId, uploader });
+    await this.recordMeetingPage({ teamId, eventId, userId, botId, botName: name, uploader });
 
     pushState('finished');
   }
 
+  private async sendMeetingChatMessage(botName?: string): Promise<void> {
+    try {
+      this._logger.info('[ChatNotification]: Attempting to send recording disclaimer message to chat...');
+      await this.page.waitForTimeout(1500);
+
+      // Find the chat button on the bottom control bar
+      const chatButton = this.page.locator('button[aria-label*="chatear" i], button[aria-label*="chat" i], button[data-panel-id="2"]').first();
+      if (await chatButton.count() > 0) {
+        await chatButton.click({ timeout: 5000, force: true });
+        await this.page.waitForTimeout(1000);
+
+        // Find the chat input area
+        const textarea = this.page.locator('textarea[aria-label*="mensaje" i], textarea[aria-label*="message" i], textarea').first();
+        if (await textarea.count() > 0 && await textarea.isVisible().catch(() => true)) {
+          const messageText = `Hola, soy ${botName || 'el asistente'}. Estoy grabando y transcribiendo esta llamada para generar una minuta automática.`;
+          await textarea.fill(messageText);
+          await this.page.waitForTimeout(500);
+          
+          // Press Enter to send
+          await this.page.keyboard.press('Enter');
+          
+          // Also try clicking the send button if available
+          const sendButton = this.page.locator('button[aria-label*="Enviar" i], button[aria-label*="Send" i]').first();
+          if (await sendButton.count() > 0 && await sendButton.isEnabled().catch(() => false)) {
+            await sendButton.click({ timeout: 2000, force: true }).catch(() => null);
+          }
+
+          this._logger.info('[ChatNotification]: Successfully sent recording disclaimer to chat');
+          await this.page.waitForTimeout(1000);
+
+          // Close the chat panel to restore clean UI view
+          const closeChatButton = this.page.locator('button[aria-label*="Cerrar" i], button[aria-label*="Close" i]').first();
+          if (await closeChatButton.count() > 0 && await closeChatButton.isVisible().catch(() => false)) {
+            await closeChatButton.click({ timeout: 2000, force: true }).catch(() => null);
+          } else {
+            await chatButton.click({ timeout: 2000, force: true }).catch(() => null);
+          }
+        } else {
+          this._logger.warn('[ChatNotification]: Chat textarea not found or not editable');
+        }
+      } else {
+        this._logger.warn('[ChatNotification]: Chat button not found on control bar');
+      }
+    } catch (chatError) {
+      this._logger.warn('[ChatNotification]: Failed to send chat message:', chatError);
+    }
+  }
+
   private async recordMeetingPage(
-    { teamId, userId, eventId, botId, uploader }: 
-    { teamId: string, userId: string, eventId?: string, botId?: string, uploader: IUploader }
+    { teamId, userId, eventId, botId, botName, uploader }: 
+    { teamId: string, userId: string, eventId?: string, botId?: string, botName?: string, uploader: IUploader }
   ): Promise<void> {
     const duration = config.maxRecordingDuration * 60 * 1000;
     const inactivityLimit = config.inactivityLimit * 60 * 1000;
@@ -677,6 +725,9 @@ export class GoogleMeetBot extends MeetBotBase {
     } catch (captionErr) {
       this._logger.warn('Could not start CaptionTask:', captionErr);
     }
+
+    // Send automated chat notification
+    await this.sendMeetingChatMessage(botName);
 
     // Capture and send the browser console logs to Node.js context
     this.page?.on('console', async msg => {
