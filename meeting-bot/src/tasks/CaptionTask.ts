@@ -82,7 +82,7 @@ export class CaptionTask {
       // Click the main control bar's More Options, ignoring the bot's own video tile options
       const configButton = this.page.locator('button[aria-label="Más opciones" i], button[aria-label="More options" i], button[jsname="NakZHc"]').first();
       if (await configButton.count() > 0) {
-          await configButton.click({ timeout: 5000 });
+          await configButton.click({ timeout: 5000, force: true });
           await this.page.waitForTimeout(1500); // Wait for menu to fully open
 
           // DUMP DOM FOR DEBUGGING
@@ -98,24 +98,24 @@ export class CaptionTask {
 
           const settingsOption = this.page.locator('li, [role="menuitem"]').filter({ hasText: /onfiguraci|ettings/i }).first();
           if (await settingsOption.count() > 0) {
-              await settingsOption.click({ timeout: 5000 });
+              await settingsOption.click({ timeout: 5000, force: true });
               await this.page.waitForTimeout(1000);
 
               const captionsTab = this.page.locator('div[role="tab"], li, button').filter({ hasText: /ubt|aption/i }).first();
               if (await captionsTab.count() > 0) {
-                  await captionsTab.click({ timeout: 5000 });
+                  await captionsTab.click({ timeout: 5000, force: true });
                   await this.page.waitForTimeout(1000);
 
                   // Buscar el dropdown de idioma
                   const langCombo = this.page.locator('div[role="combobox"]').first();
                   if (await langCombo.count() > 0) {
-                      await langCombo.click({ timeout: 5000 });
+                      await langCombo.click({ timeout: 5000, force: true });
                       await this.page.waitForTimeout(1000);
 
                       // Click Spanish (Mexico)
                       const esMxOption = this.page.locator('[role="option"]').filter({ hasText: /Espa|Mexic/i }).first();
                       if (await esMxOption.count() > 0) {
-                          await esMxOption.click({ timeout: 5000 });
+                          await esMxOption.click({ timeout: 5000, force: true });
                           this.logger.info('[CaptionTask]: Successfully set captions language to es-MX via UI');
                       } else {
                           this.logger.warn('[CaptionTask]: esMxOption not found');
