@@ -94,17 +94,27 @@ export class CaptionTask {
                       await this.page.waitForTimeout(1000);
 
                       // Click Spanish (Mexico)
-                      const esMxOption = this.page.locator('li[role="option"][data-value="es-MX"]').first();
+                      const esMxOption = this.page.locator('li[role="option"][data-value="es-MX"], li[role="option"] span').filter({ hasText: /Espa|Mexic/i }).first();
                       if (await esMxOption.count() > 0) {
                           await esMxOption.click({ timeout: 5000 });
                           this.logger.info('[CaptionTask]: Successfully set captions language to es-MX via UI');
+                      } else {
+                          this.logger.warn('[CaptionTask]: esMxOption not found');
                       }
+                  } else {
+                      this.logger.warn('[CaptionTask]: langCombo not found');
                   }
                   
                   // Close settings dialog
                   await this.page.keyboard.press('Escape');
+              } else {
+                  this.logger.warn('[CaptionTask]: captionsTab not found');
               }
+          } else {
+              this.logger.warn('[CaptionTask]: settingsOption not found');
           }
+      } else {
+          this.logger.warn('[CaptionTask]: configButton not found');
       }
     } catch (err) {
       this.logger.warn('[CaptionTask]: Could not set captions language via UI (might already be set)', err);
