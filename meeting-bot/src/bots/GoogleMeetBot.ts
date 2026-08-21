@@ -667,11 +667,29 @@ export class GoogleMeetBot extends MeetBotBase {
       this._logger.info('[ChatNotification]: Attempting to send recording disclaimer message to chat...');
       await this.page.waitForTimeout(1500);
 
-      // Find the chat button on the bottom control bar
-      const chatButton = this.page.locator('button[aria-label*="chatear" i], button[aria-label*="chat" i], button[data-panel-id="2"]').first();
-      if (await chatButton.count() > 0) {
-        await chatButton.click({ timeout: 5000, force: true });
-        
+      // 1. Dismiss any blocking notifications (like "No se encontró una cámara")
+      await this.page.evaluate(() => {
+        const dismissButtons = document.querySelectorAll('button[aria-label="Cerrar"], button[aria-label="Close"], button[aria-label="Cerrar notificación"]');
+        dismissButtons.forEach(btn => (btn as HTMLElement).click());
+      });
+      await this.page.waitForTimeout(500);
+
+      // 2. Find the chat button on the bottom control bar using evaluate
+      const chatOpened = await this.page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll('button'));
+        for (const btn of btns) {
+          const label = btn.getAttribute('aria-label')?.toLowerCase() || '';
+          // Avoid matching the "Close chat" button which might also contain "chat" if it's already open
+          if (btn.getBoundingClientRect().width > 0 && 
+             (label.includes('chatear') || label.includes('chat con') || label === 'chat' || btn.dataset.panelId === '2')) {
+            btn.click();
+            return true;
+          }
+        }
+        return false;
+      });
+
+      if (chatOpened) {
         // Wait for the panel animation to finish
         await this.page.waitForTimeout(2000);
         
@@ -707,19 +725,17 @@ export class GoogleMeetBot extends MeetBotBase {
           await this.page.waitForTimeout(1000);
 
           // Close the chat panel to restore clean UI view
-          const closeChatButton = this.page.locator('button[aria-label*="Cerrar" i], button[aria-label*="Close" i]').first();
-          if (await closeChatButton.count() > 0 && await closeChatButton.isVisible().catch(() => false)) {
-            await closeChatButton.click({ timeout: 2000, force: true }).catch(() => null);
-          } else {
-            await chatButton.click({ timeout: 2000, force: true }).catch(() => null);
-          }
+          await this.page.evaluate(() => {
+            const closeBtns = Array.from(document.querySelectorAll('button'));
+            for (const btn of closeBtns) {
+              const label = btn.getAttribute('aria-label')?.toLowerCase() || '';
+              if (btn.getBoundingClientRect().width > 0 && (label === 'cerrar' || label === 'close' || label.includes('cerrar chat'))) {
+                btn.click();
+              }
+            }
+          });
         } else {
-          // Fallback: Dump the DOM to see what the chat input actually is
-          try {
-             const domHtml = await this.page.evaluate(() => document.body.innerHTML);
-             require('fs').writeFileSync('/usr/src/app/dist/_tempvideo/chat_dump.html', domHtml);
-             this._logger.warn('[ChatNotification]: Chat textarea not found. Dumped DOM to chat_dump.html');
-          } catch(e) {}
+          this._logger.warn('[ChatNotification]: Chat textarea not found or not visible');
         }
       } else {
         this._logger.warn('[ChatNotification]: Chat button not found on control bar');
