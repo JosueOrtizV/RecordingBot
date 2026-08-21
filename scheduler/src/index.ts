@@ -21,15 +21,20 @@ async function startNotificationListener() {
 
       if (listName === config.redisRecordingList) {
         const title = data.metadata?.meetingTitle || data.metadata?.namePrefix || 'Reunión';
-        const driveUrl = data.blobUrl || data.metadata?.storage?.url || 'Google Drive';
+        let driveUrl = 'Google Drive';
+        if (data.blobUrl) driveUrl = data.blobUrl;
+        else if (data.metadata?.storage?.url) driveUrl = data.metadata.storage.url;
+        else if (data.metadata?.storage?.id) driveUrl = `https://drive.google.com/file/d/${data.metadata.storage.id}/view`;
+        
+        const durationSecs = data.metadata?.duration || data.metadata?.storage?.duration;
 
         logger.info('Received recording completion notification:', data);
 
         await sendTelegramAlert(
-          `🎬 *Grabación Completada y Subida a Drive*\n` +
+          `✅ *Grabación Completada y Subida a Drive*\n` +
           `📌 Reunión: *${title}*\n` +
           `📁 Enlace: ${driveUrl}\n` +
-          `⏱️ Duración: ${data.metadata?.storage?.duration ? Math.round(data.metadata.storage.duration / 60) + ' min' : 'N/A'}`
+          `⏱️ Duración: ${durationSecs ? Math.round(durationSecs / 60) + ' min' : 'N/A'}`
         );
       } else if (listName === config.redisFailureList) {
         logger.warn('Received recording failure notification:', data);

@@ -831,6 +831,7 @@ class DiskUploader implements IUploader {
               uploaderType: config.uploaderType,
               duration: this.recordingDuration,
               storage: this.lastStorageDetails,
+              namePrefix: this._namePrefix,
             },
           };
           await notifyRecordingCompleted(payload, this._logger);
