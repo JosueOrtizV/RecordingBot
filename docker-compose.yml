@@ -52,6 +52,8 @@ services:
       - ./credentials.json:/app/credentials.json:ro
       - ./token.json:/app/token.json
       - ./recordings:/usr/src/app/dist/_tempvideo
+      - ./whisper-env:/app/whisper-env:ro
+      - ./scripts:/app/scripts:ro
     depends_on:
       redis:
         condition: service_healthy

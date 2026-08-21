@@ -139,13 +139,63 @@ export class GoogleDriveStorageProvider implements StorageProvider {
     this.lastUploadedWebLink = response.data.webViewLink || null;
     logger.info(`GoogleDriveStorageProvider: Main file uploaded successfully! ID: ${response.data.id}, Link: ${response.data.webViewLink}`);
 
-    // 4. Check if there is an accompanying transcript .txt file and upload it as well
+    // 4. Check if transcript exists or if we should run Whisper AI fallback
     const dir = path.dirname(filePath);
     const baseWithoutExt = path.basename(filePath, path.extname(filePath));
     const transcriptPath = path.join(dir, `${baseWithoutExt}.txt`);
 
+    let hasValidTranscript = false;
     if (fs.existsSync(transcriptPath)) {
-      logger.info(`GoogleDriveStorageProvider: Found accompanying transcript at ${transcriptPath}, uploading...`);
+      try {
+        const content = fs.readFileSync(transcriptPath, 'utf8').trim();
+        // Check if there is actual dialogue (more than 3 non-empty lines)
+        const lines = content.split('\n').filter(l => l.trim().length > 0);
+        if (lines.length >= 3) {
+          hasValidTranscript = true;
+        }
+      } catch (err) {
+        logger.warn('GoogleDriveStorageProvider: Error reading existing transcript:', err);
+      }
+    }
+
+    // Fallback: If CC scraping yielded no transcript, invoke local Whisper AI
+    if (!hasValidTranscript) {
+      logger.info(`GoogleDriveStorageProvider: Transcript missing or empty. Attempting Whisper AI fallback...`);
+      const possiblePythonBins = [
+        '/app/whisper-env/bin/python',
+        '/var/www/RecordingBot/whisper-env/bin/python',
+        'python3'
+      ];
+      const possibleScripts = [
+        '/app/scripts/whisper_transcribe.py',
+        '/var/www/RecordingBot/scripts/whisper_transcribe.py',
+        path.resolve(process.cwd(), '../scripts/whisper_transcribe.py')
+      ];
+
+      const pythonBin = possiblePythonBins.find(p => fs.existsSync(p));
+      const scriptPath = possibleScripts.find(s => fs.existsSync(s));
+
+      if (pythonBin && scriptPath) {
+        try {
+          const { execSync } = require('child_process');
+          logger.info(`GoogleDriveStorageProvider: Running Whisper fallback (${pythonBin} ${scriptPath})...`);
+          execSync(`"${pythonBin}" "${scriptPath}" "${finalFilePath}" "${transcriptPath}"`, {
+            stdio: 'inherit',
+            timeout: 15 * 60 * 1000 // 15 min max
+          });
+          if (fs.existsSync(transcriptPath)) {
+            logger.info(`GoogleDriveStorageProvider: Whisper fallback generated transcript successfully!`);
+          }
+        } catch (whisperErr) {
+          logger.warn(`GoogleDriveStorageProvider: Whisper AI fallback failed:`, whisperErr);
+        }
+      } else {
+        logger.warn(`GoogleDriveStorageProvider: Whisper python environment not found, skipping fallback.`);
+      }
+    }
+
+    if (fs.existsSync(transcriptPath)) {
+      logger.info(`GoogleDriveStorageProvider: Found transcript at ${transcriptPath}, uploading...`);
       try {
         const niceBaseWithoutExt = path.basename(key, path.extname(key)) || baseWithoutExt;
         const transcriptMeta: drive_v3.Schema$File = {
