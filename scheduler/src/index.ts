@@ -39,13 +39,37 @@ async function startNotificationListener() {
       } else if (listName === config.redisFailureList) {
         logger.warn('Received recording failure notification:', data);
 
-        const title = data.metadata?.meetingTitle || 'Reunión';
-        const reason = data.error || data.message || 'Error desconocido';
+        const title = data.metadata?.meetingTitle || data.metadata?.namePrefix || data.metadata?.meetingName || 'Reunión';
+        let rawReason = '';
+        if (typeof data.error === 'string') {
+          rawReason = data.error;
+        } else if (data.error?.message) {
+          rawReason = data.error.message;
+        } else if (data.error?.type) {
+          rawReason = data.error.type;
+        } else if (data.message) {
+          rawReason = typeof data.message === 'string' ? data.message : JSON.stringify(data.message);
+        } else {
+          rawReason = 'Error desconocido';
+        }
+
+        // Friendly error messages in Spanish
+        let friendlyReason = rawReason;
+        const lower = rawReason.toLowerCase();
+        if (lower.includes('waitingatlobbyretryerror') || lower.includes('lobby') || lower.includes('could not enter') || lower.includes('admission')) {
+          friendlyReason = 'Nadie admitió al bot en la sala de espera (Tiempo de espera agotado)';
+        } else if (lower.includes('sign in') || lower.includes('unsupportedmeetingerror')) {
+          friendlyReason = 'La reunión requiere inicio de sesión con cuenta de Google';
+        } else if (lower.includes('denied') || lower.includes('rechaz')) {
+          friendlyReason = 'El acceso del bot fue rechazado por el anfitrión';
+        } else if (lower.includes('upload') || lower.includes('recordinguploadfailederror')) {
+          friendlyReason = 'La reunión concluyó pero ocurrió un error al subir el video a Google Drive';
+        }
 
         await sendTelegramAlert(
           `⚠️ *Error en Grabación de Reunión*\n` +
           `📌 Reunión: *${title}*\n` +
-          `❌ Razón: ${reason}`
+          `❌ Razón: ${friendlyReason}`
         );
       }
     } catch (err: any) {

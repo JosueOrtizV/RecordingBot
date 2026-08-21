@@ -34,6 +34,7 @@ export interface MeetingFailedPayload {
     eventId?: string;
     provider?: string;
     meetingName?: string;
+    meetingTitle?: string;
     timezone?: string;
   };
 }
@@ -41,6 +42,8 @@ export interface MeetingFailedPayload {
 export interface MeetingFailureContext {
   url: string;
   name?: string;
+  meetingTitle?: string;
+  namePrefix?: string;
   teamId: string;
   timezone?: string;
   userId: string;
@@ -164,7 +167,8 @@ export function createMeetingFailedPayload(context: MeetingFailureContext, error
       botId: context.botId,
       eventId: context.eventId,
       provider: context.provider,
-      meetingName: context.name,
+      meetingName: (context as any).meetingTitle || context.name,
+      meetingTitle: (context as any).meetingTitle || (context as any).namePrefix,
       timezone: context.timezone,
     },
   };
