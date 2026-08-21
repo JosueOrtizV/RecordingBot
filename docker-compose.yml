@@ -78,7 +78,6 @@ services:
     volumes:
       - ./credentials.json:/app/credentials.json:ro
       - ./token.json:/app/token.json
-      - /root/scripts/telegram_alert.sh:/root/scripts/telegram_alert.sh:ro
     depends_on:
       redis:
         condition: service_healthy

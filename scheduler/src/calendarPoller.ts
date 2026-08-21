@@ -5,7 +5,13 @@ import { config } from './config';
 import { dispatchMeetingJob } from './jobDispatcher';
 import { sendTelegramAlert } from './telegramNotifier';
 
-const dispatchedEvents = new Set<string>();
+interface DispatchedEvent {
+  eventId: string;
+  title: string;
+  startTime: Date;
+  endTime: Date;
+}
+const dispatchedEvents = new Map<string, DispatchedEvent>();
 
 export function extractGoogleMeetUrl(event: any): string | null {
   if (event.hangoutLink) {
@@ -19,7 +25,6 @@ export function extractGoogleMeetUrl(event: any): string | null {
     }
   }
 
-  // Check description or location as fallback
   const regex = /https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i;
   const matchDesc = event.description?.match(regex);
   if (matchDesc) return matchDesc[0];
@@ -55,14 +60,32 @@ export async function pollCalendar(): Promise<void> {
 
     const events = res.data.items || [];
     logger.info(`Found ${events.length} upcoming calendar event(s) in next 24 hours.`);
+    const activeEventIds = new Set(events.map(e => e.id));
+
+    // Check for canceled or rescheduled events
+    for (const [key, dispatched] of dispatchedEvents.entries()) {
+      if (dispatched.endTime.getTime() < now.getTime()) {
+        dispatchedEvents.delete(key);
+        continue;
+      }
+      
+      if (!activeEventIds.has(dispatched.eventId)) {
+        await sendTelegramAlert(`🗑️ *Reunión Cancelada o Reprogramada*\n\nSe ha eliminado del calendario la reunión *${dispatched.title}*. Si el bot ya estaba programado, es posible que entre y salga inmediatamente.`);
+        dispatchedEvents.delete(key);
+      }
+    }
 
     for (const event of events) {
       if (!event.id || !event.start) continue;
 
       const startTimeStr = event.start.dateTime || event.start.date;
+      const endTimeStr = event.end?.dateTime || event.end?.date;
       if (!startTimeStr) continue;
 
       const startTime = new Date(startTimeStr);
+      // Fallback: if no end time, assume 1 hour duration
+      const endTime = endTimeStr ? new Date(endTimeStr) : new Date(startTime.getTime() + 60 * 60 * 1000);
+      
       const meetUrl = extractGoogleMeetUrl(event);
       const title = event.summary || 'Reunión sin título';
 
@@ -76,9 +99,23 @@ export async function pollCalendar(): Promise<void> {
 
       logger.info(`Detected Meet event: "${title}" | Starts in: ${minutesUntilMeeting.toFixed(1)} mins | URL: ${meetUrl}`);
 
-      // Dispatch if within lead time (e.g. 5 minutes before meeting starts) and not yet dispatched
       if (minutesUntilMeeting <= config.leadTimeMinutes && minutesUntilMeeting >= -15) {
         if (!dispatchedEvents.has(eventKey)) {
+          
+          let hasOverlap = false;
+          for (const [key, active] of dispatchedEvents.entries()) {
+            if (startTime.getTime() < active.endTime.getTime() && endTime.getTime() > active.startTime.getTime()) {
+              await sendTelegramAlert(`⚠️ *Conflicto de Reuniones*\n\nTienes 2 reuniones a la misma hora:\n1. ${active.title}\n2. ${title}\n\nEl bot solo grabará la primera (${active.title}).`);
+              hasOverlap = true;
+              break;
+            }
+          }
+
+          if (hasOverlap) {
+            dispatchedEvents.set(eventKey, { eventId: event.id, title, startTime, endTime });
+            continue;
+          }
+
           logger.info(`Dispatching bot for meeting "${title}"...`);
           await dispatchMeetingJob({
             url: meetUrl,
@@ -86,7 +123,7 @@ export async function pollCalendar(): Promise<void> {
             startTime,
             eventId: event.id,
           });
-          dispatchedEvents.add(eventKey);
+          dispatchedEvents.set(eventKey, { eventId: event.id, title, startTime, endTime });
         } else {
           logger.debug(`Event "${title}" was already dispatched.`);
         }
@@ -95,7 +132,7 @@ export async function pollCalendar(): Promise<void> {
   } catch (err: any) {
     logger.error('Error while polling Google Calendar:', err?.message || err);
     if (err?.code === 401 || err?.response?.status === 401) {
-      await sendTelegramAlert('⚠️ *RecordingBot Alerta*: El token de Google OAuth expiró o es inválido. Es necesario re-autenticar.');
+      await sendTelegramAlert('🚨 *RecordingBot Alerta*: El token de Google OAuth expiró o es inválido. Es necesario re-autenticar.');
     }
   }
 }

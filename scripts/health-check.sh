@@ -27,3 +27,9 @@ FAILED_CONTAINERS=$(docker compose ps --filter "status=exited" --format "{{.Serv
 if [ -n "$FAILED_CONTAINERS" ]; then
     send_alert "⚠️ <b>Alerta RecordingBot</b>: Contenedor(es) caídos: <code>$FAILED_CONTAINERS</code>. Autoheal intentará reiniciar."
 fi
+
+# 3. Check Redis connectivity
+REDIS_PING=$(docker exec recordingbot-redis-1 redis-cli ping 2>/dev/null)
+if [ "$REDIS_PING" != "PONG" ]; then
+    send_alert "⚠️ <b>Alerta RecordingBot</b>: Redis no responde (Ping fallido). La cola de trabajos podría estar atascada."
+fi

@@ -25,5 +25,6 @@ export const config = {
   leadTimeMinutes: parseInt(process.env.LEAD_TIME_MINUTES || '5', 10), // dispatch 5 min before meeting
   
   // Telegram
-  telegramAlertScript: process.env.TELEGRAM_ALERT_SCRIPT || '/root/scripts/telegram_alert.sh',
+  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
+  telegramChatId: process.env.TELEGRAM_CHAT_ID || '',
 };

@@ -1,23 +1,38 @@
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-import fs from 'fs';
 import { config } from './config';
 import { logger } from './logger';
-
-const execFileAsync = promisify(execFile);
 
 export async function sendTelegramAlert(message: string): Promise<void> {
   logger.info(`[Telegram Alert]: ${message}`);
 
-  const scriptPath = config.telegramAlertScript;
-  if (fs.existsSync(scriptPath)) {
-    try {
-      await execFileAsync(scriptPath, [message]);
-      logger.info('Successfully executed telegram alert script');
-    } catch (err: any) {
-      logger.warn('Failed to execute telegram alert script:', err?.message || err);
+  const token = config.telegramBotToken;
+  const chatId = config.telegramChatId;
+
+  if (!token || !chatId) {
+    logger.warn('Telegram token or chat ID not configured. Skipping alert.');
+    return;
+  }
+
+  try {
+    const url = `https://api.telegram.org/bot${token}/sendMessage`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: message,
+        parse_mode: 'HTML',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.warn(`Failed to send telegram alert. Status: ${response.status}, Error: ${errorText}`);
+    } else {
+      logger.info('Successfully sent telegram alert');
     }
-  } else {
-    logger.debug(`Telegram script not found at ${scriptPath}, logging alert only.`);
+  } catch (err: any) {
+    logger.error('Error sending telegram alert:', err?.message || err);
   }
 }
