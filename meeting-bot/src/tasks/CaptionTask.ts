@@ -151,7 +151,28 @@ export class CaptionTask {
                       }
                   }
               }
-              await this.page.keyboard.press('Escape');
+              
+              // NEW: Explicitly close the Settings modal by finding the Close (X) button
+              const closedModal = await this.page.evaluate(() => {
+                  const closeButtons = Array.from(document.querySelectorAll('button[aria-label="Cerrar"], button[aria-label="Close"], button[data-mdc-dialog-action="close"]'));
+                  for (const btn of closeButtons) {
+                      if (btn.getBoundingClientRect().width > 0) {
+                          (btn as HTMLElement).click();
+                          return true;
+                      }
+                  }
+                  return false;
+              });
+
+              if (!closedModal) {
+                  this.logger.warn('[CaptionTask]: Could not find close button for settings modal, falling back to Escape');
+                  await this.page.keyboard.press('Escape');
+                  await this.page.waitForTimeout(500);
+                  await this.page.keyboard.press('Escape'); // Double escape just in case
+              } else {
+                  this.logger.info('[CaptionTask]: Closed settings modal successfully via button click');
+              }
+
           } else {
               this.logger.warn('[CaptionTask]: settingsOption not found');
           }
