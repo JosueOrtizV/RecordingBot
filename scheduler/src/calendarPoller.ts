@@ -130,8 +130,12 @@ export async function pollCalendar(): Promise<void> {
       }
     }
   } catch (err: any) {
-    logger.error('Error while polling Google Calendar:', err?.message || err);
-    if (err?.code === 401 || err?.response?.status === 401) {
+    logger.error('Error while polling Google Calendar:');
+    logger.error(err?.stack || err);
+    if (err?.response?.data) {
+      logger.error('Error response data: ' + JSON.stringify(err.response.data));
+    }
+    if (err?.code === 401 || err?.response?.status === 401 || (err?.response?.data?.error === 'invalid_grant')) {
       await sendTelegramAlert('🚨 *RecordingBot Alerta*: El token de Google OAuth expiró o es inválido. Es necesario re-autenticar.');
     }
   }
