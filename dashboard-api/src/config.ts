@@ -34,8 +34,8 @@ export const config = {
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID || fileClientId,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || fileClientSecret,
-    redirectUri: process.env.GOOGLE_REDIRECT_URI || (process.env.NODE_ENV === 'production' 
-      ? 'https://api.recordingbot.josueortiz.dev/auth/google/callback' 
+    redirectUri: process.env.GOOGLE_REDIRECT_URI || fileRedirectUri || (process.env.NODE_ENV === 'production' 
+      ? 'https://recordingbot.josueortiz.dev/auth/google/callback' 
       : 'http://localhost:3002/auth/google/callback'),
   },
 

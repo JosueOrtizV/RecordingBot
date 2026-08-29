@@ -1,4 +1,4 @@
-﻿services:
+services:
   postgres:
     image: postgres:16-alpine
     container_name: recordingbot-postgres
@@ -133,7 +133,7 @@
       - POSTGRES_DB=recordingbot
       - REDIS_HOST=redis
       - FRONTEND_URL=https://recordingbot.josueortiz.dev
-      - GOOGLE_REDIRECT_URI=https://api.recordingbot.josueortiz.dev/auth/google/callback
+      - GOOGLE_REDIRECT_URI=https://recordingbot.josueortiz.dev/auth/google/callback
       - GOOGLE_CREDENTIALS_PATH=/app/credentials.json
     volumes:
       - ./credentials.json:/app/credentials.json:ro
