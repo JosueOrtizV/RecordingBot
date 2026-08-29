@@ -63,6 +63,8 @@ export function getOAuth2Client(): OAuth2Client {
   return oauth2Client;
 }
 
+import { query } from './db.js';
+
 export function isAuthorized(): boolean {
   if (!fs.existsSync(config.tokenPath)) {
     return false;
@@ -74,3 +76,44 @@ export function isAuthorized(): boolean {
     return false;
   }
 }
+
+export function getUserOAuth2Client(userId: string, tokens: any): OAuth2Client {
+  if (!fs.existsSync(config.credentialsPath)) {
+    throw new Error(`Credentials file not found at: ${config.credentialsPath}`);
+  }
+
+  const content = fs.readFileSync(config.credentialsPath, 'utf8');
+  const credentials: CredentialsFile = JSON.parse(content);
+  const keys = credentials.installed || credentials.web;
+
+  if (!keys) {
+    throw new Error('Invalid credentials.json format: Missing "installed" or "web" section.');
+  }
+
+  const redirectUri = keys.redirect_uris?.[0] || 'http://localhost';
+  const oauth2Client = new google.auth.OAuth2(
+    keys.client_id,
+    keys.client_secret,
+    redirectUri
+  );
+
+  oauth2Client.setCredentials(tokens);
+
+  oauth2Client.on('tokens', async (newTokens) => {
+    logger.info(`OAuth tokens refreshed for user ${userId}`);
+    try {
+      const currentRes = await query('SELECT google_tokens FROM users WHERE id = $1', [userId]);
+      const currentTokens = currentRes.rows[0]?.google_tokens || {};
+      const merged = { ...currentTokens, ...newTokens };
+      await query('UPDATE users SET google_tokens = $1, updated_at = NOW() WHERE id = $2', [
+        JSON.stringify(merged),
+        userId,
+      ]);
+    } catch (err) {
+      logger.error(`Error updating refreshed tokens in DB for user ${userId}:`, err);
+    }
+  });
+
+  return oauth2Client;
+}
+

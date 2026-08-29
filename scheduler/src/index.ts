@@ -5,6 +5,8 @@ import { pollCalendar } from './calendarPoller';
 import { getRedisClient } from './jobDispatcher';
 import { sendTelegramAlert } from './telegramNotifier';
 
+import { query } from './db';
+
 async function startNotificationListener() {
   const redis = getRedisClient().duplicate();
 
@@ -21,25 +23,79 @@ async function startNotificationListener() {
 
       if (listName === config.redisRecordingList) {
         const title = data.metadata?.meetingTitle || data.metadata?.namePrefix || 'Reunión';
-        let driveUrl = 'Google Drive';
+        let driveUrl = '';
+        let fileId = '';
+
         if (data.blobUrl) driveUrl = data.blobUrl;
         else if (data.metadata?.storage?.url) driveUrl = data.metadata.storage.url;
-        else if (data.metadata?.storage?.id) driveUrl = `https://drive.google.com/file/d/${data.metadata.storage.id}/view`;
-        
-        const durationSecs = data.metadata?.duration || data.metadata?.storage?.duration;
+        else if (data.metadata?.storage?.id) {
+          fileId = data.metadata.storage.id;
+          driveUrl = `https://drive.google.com/file/d/${fileId}/view`;
+        } else if (data.metadata?.storage?.fileId) {
+          fileId = data.metadata.storage.fileId;
+          driveUrl = `https://drive.google.com/file/d/${fileId}/view`;
+        }
 
-        logger.info('Received recording completion notification:', data);
+        const durationSecs = data.metadata?.duration || data.metadata?.storage?.duration || 0;
+        const recordingId = data.recordingId || data.metadata?.botId;
+        const transcriptText = data.metadata?.transcriptText || data.transcriptText || null;
+        const dedupGroupId = data.metadata?.dedupGroupId;
+
+        logger.info('Received recording completion notification:', {
+          recordingId,
+          title,
+          driveUrl,
+          durationSecs,
+          hasTranscript: Boolean(transcriptText),
+        });
+
+        // Update DB
+        try {
+          if (recordingId) {
+            await query(
+              `UPDATE recordings
+               SET status = 'completed',
+                   drive_url = COALESCE(NULLIF($1, ''), drive_url),
+                   drive_file_id = COALESCE(NULLIF($2, ''), drive_file_id),
+                   duration_seconds = COALESCE($3, duration_seconds),
+                   transcript_text = COALESCE($4, transcript_text),
+                   completed_at = NOW()
+               WHERE id = $5 OR calendar_event_id = $5`,
+              [driveUrl, fileId, durationSecs, transcriptText, recordingId]
+            );
+          }
+
+          // If deduplicated group, update all linked records
+          if (dedupGroupId) {
+            await query(
+              `UPDATE recordings
+               SET status = 'completed',
+                   drive_url = COALESCE(NULLIF($1, ''), drive_url),
+                   drive_file_id = COALESCE(NULLIF($2, ''), drive_file_id),
+                   duration_seconds = COALESCE($3, duration_seconds),
+                   transcript_text = COALESCE($4, transcript_text),
+                   completed_at = NOW()
+               WHERE dedup_group_id = $5`,
+              [driveUrl, fileId, durationSecs, transcriptText, dedupGroupId]
+            );
+          }
+        } catch (dbErr) {
+          logger.warn('Failed to update completed recording in DB:', dbErr);
+        }
 
         await sendTelegramAlert(
           `✅ *Grabación Completada y Subida a Drive*\n` +
           `📌 Reunión: *${title}*\n` +
-          `📁 Enlace: ${driveUrl}\n` +
+          `📁 Enlace: ${driveUrl || 'En tu Google Drive'}\n` +
           `⏱️ Duración: ${durationSecs ? Math.round(durationSecs / 60) + ' min' : 'N/A'}`
         );
       } else if (listName === config.redisFailureList) {
         logger.warn('Received recording failure notification:', data);
 
         const title = data.metadata?.meetingTitle || data.metadata?.namePrefix || data.metadata?.meetingName || 'Reunión';
+        const recordingId = data.recordingId || data.metadata?.botId;
+        const dedupGroupId = data.metadata?.dedupGroupId;
+
         let rawReason = '';
         if (typeof data.error === 'string') {
           rawReason = data.error;
@@ -64,6 +120,32 @@ async function startNotificationListener() {
           friendlyReason = 'El acceso del bot fue rechazado por el anfitrión';
         } else if (lower.includes('upload') || lower.includes('recordinguploadfailederror')) {
           friendlyReason = 'La reunión concluyó pero ocurrió un error al subir el video a Google Drive';
+        }
+
+        // Update DB
+        try {
+          if (recordingId) {
+            await query(
+              `UPDATE recordings
+               SET status = 'failed',
+                   error_message = $1,
+                   completed_at = NOW()
+               WHERE id = $2 OR calendar_event_id = $2`,
+              [friendlyReason, recordingId]
+            );
+          }
+          if (dedupGroupId) {
+            await query(
+              `UPDATE recordings
+               SET status = 'failed',
+                   error_message = $1,
+                   completed_at = NOW()
+               WHERE dedup_group_id = $2`,
+              [friendlyReason, dedupGroupId]
+            );
+          }
+        } catch (dbErr) {
+          logger.warn('Failed to update failed recording in DB:', dbErr);
         }
 
         await sendTelegramAlert(

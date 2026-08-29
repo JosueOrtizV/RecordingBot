@@ -154,6 +154,9 @@ export class RedisConsumerService {
           tempFileId,
           logger,
           meetingParams.url,
+          meetingParams.userTokens,
+          meetingParams.driveFolderName,
+          meetingParams.dedupGroupId
         );
 
         // Create and join the meeting

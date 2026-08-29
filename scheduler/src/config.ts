@@ -24,6 +24,15 @@ export const config = {
   pollIntervalMinutes: parseInt(process.env.CALENDAR_POLL_INTERVAL_MINUTES || '2', 10),
   leadTimeMinutes: parseInt(process.env.LEAD_TIME_MINUTES || '5', 10), // dispatch 5 min before meeting
   
+  // Database
+  db: {
+    host: process.env.POSTGRES_HOST || 'postgres',
+    port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
+    user: process.env.POSTGRES_USER || 'recordingbot',
+    password: process.env.POSTGRES_PASSWORD || 'recordingbot_secure_password',
+    database: process.env.POSTGRES_DB || 'recordingbot',
+  },
+
   // Telegram
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
   telegramChatId: process.env.TELEGRAM_CHAT_ID || '',

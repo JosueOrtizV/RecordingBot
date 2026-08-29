@@ -14,6 +14,10 @@ export interface MeetingJobPayload {
   teamId: string;
   timezone: string;
   meetingTitle?: string;
+  recordingMode?: string;
+  userTokens?: any;
+  driveFolderName?: string;
+  dedupGroupId?: string;
 }
 
 let redisClient: Redis | null = null;
@@ -43,6 +47,12 @@ export async function dispatchMeetingJob(meeting: {
   title: string;
   startTime: Date;
   eventId: string;
+  userId?: string;
+  botName?: string;
+  recordingMode?: string;
+  userTokens?: any;
+  driveFolderName?: string;
+  dedupGroupId?: string;
 }): Promise<string> {
   const redis = getRedisClient();
   const botId = uuidv4();
@@ -50,16 +60,26 @@ export async function dispatchMeetingJob(meeting: {
   const payload: MeetingJobPayload = {
     provider: 'google',
     url: meeting.url,
-    name: config.botDisplayName,
+    name: meeting.botName || config.botDisplayName,
     botId,
     eventId: meeting.eventId,
-    userId: 'josue',
+    userId: meeting.userId || 'josue',
     teamId: 'recording-bot',
     timezone: config.timezone,
     meetingTitle: meeting.title,
+    recordingMode: meeting.recordingMode || 'video',
+    userTokens: meeting.userTokens,
+    driveFolderName: meeting.driveFolderName || 'RecordingBot',
+    dedupGroupId: meeting.dedupGroupId,
   };
 
-  logger.info(`Enqueuing meeting job to Redis [${config.redisQueueName}]:`, payload);
+  logger.info(`Enqueuing meeting job to Redis [${config.redisQueueName}]:`, {
+    botId,
+    url: payload.url,
+    title: payload.meetingTitle,
+    userId: payload.userId,
+    mode: payload.recordingMode,
+  });
 
   await redis.lpush(config.redisQueueName, JSON.stringify(payload));
 
@@ -67,9 +87,10 @@ export async function dispatchMeetingJob(meeting: {
     `🤖 *Bot Despachado*\n` +
     `📌 Reunión: *${meeting.title}*\n` +
     `🔗 Enlace: ${meeting.url}\n` +
-    `👤 Nombre: ${config.botDisplayName}\n` +
+    `👤 Nombre: ${payload.name}\n` +
     `🕒 Inicio: ${meeting.startTime.toLocaleTimeString('es-MX', { timeZone: config.timezone })}`
   );
 
   return botId;
 }
+

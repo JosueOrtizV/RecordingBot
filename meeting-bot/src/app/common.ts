@@ -14,6 +14,10 @@ export interface MeetingJoinParams {
   botId?: string;
   eventId?: string;
   meetingTitle?: string;
+  recordingMode?: string;
+  userTokens?: any;
+  driveFolderName?: string;
+  dedupGroupId?: string;
 }
 
 export interface MeetingJoinRedisParams extends MeetingJoinParams {

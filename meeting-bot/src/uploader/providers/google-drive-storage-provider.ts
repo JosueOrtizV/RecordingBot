@@ -19,18 +19,33 @@ export class GoogleDriveStorageProvider implements StorageProvider {
       throw new Error(`Google Drive Storage Provider error: credentials file not found at ${credPath}`);
     }
     if (!fs.existsSync(tokenPath)) {
-      throw new Error(`Google Drive Storage Provider error: token file not found at ${tokenPath}. Please authenticate first.`);
+      // If user tokens are passed dynamically in metadata, tokenPath is optional
+      return;
     }
   }
 
-  private getClient(): drive_v3.Drive {
+  private getClient(userTokens?: any): drive_v3.Drive {
+    if (userTokens && typeof userTokens === 'object' && (userTokens.access_token || userTokens.refresh_token)) {
+      const credPath = process.env.GOOGLE_CREDENTIALS_PATH || path.resolve(process.cwd(), 'credentials.json');
+      const credContent = JSON.parse(fs.readFileSync(credPath, 'utf8'));
+      const keys = credContent.installed || credContent.web;
+
+      const oauth2Client = new google.auth.OAuth2(
+        keys.client_id,
+        keys.client_secret,
+        keys.redirect_uris?.[0] || 'http://localhost'
+      );
+      oauth2Client.setCredentials(userTokens);
+      return google.drive({ version: 'v3', auth: oauth2Client });
+    }
+
     if (this.driveClient) return this.driveClient;
 
     const credPath = process.env.GOOGLE_CREDENTIALS_PATH || path.resolve(process.cwd(), 'credentials.json');
     const tokenPath = process.env.GOOGLE_TOKEN_PATH || path.resolve(process.cwd(), 'token.json');
 
     const credContent = JSON.parse(fs.readFileSync(credPath, 'utf8'));
-    const tokenContent = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+    const tokenContent = fs.existsSync(tokenPath) ? JSON.parse(fs.readFileSync(tokenPath, 'utf8')) : {};
     const keys = credContent.installed || credContent.web;
 
     const oauth2Client = new google.auth.OAuth2(
@@ -41,16 +56,18 @@ export class GoogleDriveStorageProvider implements StorageProvider {
     oauth2Client.setCredentials(tokenContent);
 
     oauth2Client.on('tokens', (newTokens) => {
-      const current = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
-      fs.writeFileSync(tokenPath, JSON.stringify({ ...current, ...newTokens }, null, 2));
+      if (fs.existsSync(tokenPath)) {
+        const current = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+        fs.writeFileSync(tokenPath, JSON.stringify({ ...current, ...newTokens }, null, 2));
+      }
     });
 
     this.driveClient = google.drive({ version: 'v3', auth: oauth2Client });
     return this.driveClient;
   }
 
-  private async getOrCreateFolder(folderName: string, parentId?: string): Promise<string> {
-    const drive = this.getClient();
+  private async getOrCreateFolder(folderName: string, parentId?: string, driveInstance?: drive_v3.Drive): Promise<string> {
+    const drive = driveInstance || this.getClient();
     let query = `mimeType='application/vnd.google-apps.folder' and name='${folderName}' and trashed=false`;
     if (parentId) {
       query += ` and '${parentId}' in parents`;
@@ -82,7 +99,7 @@ export class GoogleDriveStorageProvider implements StorageProvider {
   }
 
   async uploadFile(options: UploadOptions): Promise<boolean> {
-    const { filePath, key, contentType, logger } = options;
+    const { filePath, key, contentType, logger, metadata } = options;
 
     logger.info(`GoogleDriveStorageProvider: uploading ${filePath} (key: ${key})...`);
 
@@ -90,15 +107,16 @@ export class GoogleDriveStorageProvider implements StorageProvider {
       throw new Error(`File does not exist at path: ${filePath}`);
     }
 
-    const drive = this.getClient();
-    const mainFolderName = process.env.GOOGLE_DRIVE_FOLDER_NAME || 'RecordingBot';
+    const userTokens = metadata?.userTokens ? (typeof metadata.userTokens === 'string' ? JSON.parse(metadata.userTokens) : metadata.userTokens) : undefined;
+    const drive = this.getClient(userTokens);
+    const mainFolderName = metadata?.driveFolderName || process.env.GOOGLE_DRIVE_FOLDER_NAME || 'RecordingBot';
 
     // 1. Get or create root "RecordingBot" folder
-    const rootId = await this.getOrCreateFolder(mainFolderName);
+    const rootId = await this.getOrCreateFolder(mainFolderName, undefined, drive);
 
     // 2. Get or create date folder "YYYY-MM-DD"
     const today = new Date().toISOString().split('T')[0];
-    const dateFolderId = await this.getOrCreateFolder(today, rootId);
+    const dateFolderId = await this.getOrCreateFolder(today, rootId, drive);
 
     const fileName = path.basename(key) || path.basename(filePath);
 

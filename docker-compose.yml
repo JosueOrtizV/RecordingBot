@@ -1,6 +1,26 @@
-services:
+﻿services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: recordingbot-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=recordingbot
+      - POSTGRES_PASSWORD=recordingbot_secure_password
+      - POSTGRES_DB=recordingbot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recordingbot -d recordingbot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - recordingbot_net
+
   redis:
     image: redis:7-alpine
+    container_name: recordingbot-redis-1
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -15,6 +35,7 @@ services:
 
   chrome-cdp:
     platform: linux/amd64
+    container_name: recordingbot-chrome-cdp-1
     build:
       context: ./meeting-bot
       dockerfile: Dockerfile.chrome-cdp
@@ -34,6 +55,7 @@ services:
 
   meeting-bot:
     platform: linux/amd64
+    container_name: recordingbot-meeting-bot-1
     build:
       context: ./meeting-bot
       dockerfile: Dockerfile.production
@@ -64,6 +86,7 @@ services:
       - recordingbot_net
 
   scheduler:
+    container_name: recordingbot-scheduler-1
     build:
       context: ./scheduler
       dockerfile: Dockerfile
@@ -73,12 +96,18 @@ services:
       - TZ=America/Mexico_City
       - NODE_ENV=production
       - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=recordingbot
+      - POSTGRES_PASSWORD=recordingbot_secure_password
+      - POSTGRES_DB=recordingbot
       - GOOGLE_CREDENTIALS_PATH=/app/credentials.json
       - GOOGLE_TOKEN_PATH=/app/token.json
     volumes:
       - ./credentials.json:/app/credentials.json:ro
       - ./token.json:/app/token.json
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
       meeting-bot:
@@ -87,9 +116,55 @@ services:
     networks:
       - recordingbot_net
 
+  dashboard-api:
+    container_name: recordingbot-dashboard-api
+    build:
+      context: ./dashboard-api
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - TZ=America/Mexico_City
+      - NODE_ENV=production
+      - PORT=3002
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=recordingbot
+      - POSTGRES_PASSWORD=recordingbot_secure_password
+      - POSTGRES_DB=recordingbot
+      - REDIS_HOST=redis
+      - FRONTEND_URL=https://recordingbot.josueortiz.dev
+      - GOOGLE_REDIRECT_URI=https://api.recordingbot.josueortiz.dev/auth/google/callback
+      - GOOGLE_CREDENTIALS_PATH=/app/credentials.json
+    volumes:
+      - ./credentials.json:/app/credentials.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - recordingbot_net
+      - web
+
+  dashboard-frontend:
+    container_name: recordingbot-dashboard-frontend
+    build:
+      context: ./dashboard-frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - dashboard-api
+    networks:
+      - recordingbot_net
+      - web
+
 networks:
   recordingbot_net:
     driver: bridge
+  web:
+    external: true
 
 volumes:
   redis_data:
+  postgres_data:

@@ -83,6 +83,10 @@ class DiskUploader implements IUploader {
   private lastStorageDetails?: Record<string, any>;
   private recordingDuration?: number;
   private firstChunkReceivedAt?: number;
+  private lastTranscriptContent?: string;
+  private userTokens?: any;
+  private driveFolderName?: string;
+  private dedupGroupId?: string;
 
   private queue: Buffer[];
   private writing: boolean;
@@ -99,7 +103,10 @@ class DiskUploader implements IUploader {
     namePrefix: string,
     tempFileId: string,
     logger: Logger,
-    meetingLink?: string
+    meetingLink?: string,
+    userTokens?: any,
+    driveFolderName?: string,
+    dedupGroupId?: string
   ) {
     this._token = token;
     this._teamId = teamId;
@@ -110,6 +117,9 @@ class DiskUploader implements IUploader {
     this._tempFileId = tempFileId;
     this._logger = logger;
     this._meetingLink = meetingLink;
+    this.userTokens = userTokens;
+    this.driveFolderName = driveFolderName;
+    this.dedupGroupId = dedupGroupId;
 
     this.queue = [];
     this.writing = false;
@@ -126,7 +136,10 @@ class DiskUploader implements IUploader {
     namePrefix: string,
     tempFileId: string,
     logger: Logger,
-    meetingLink?: string
+    meetingLink?: string,
+    userTokens?: any,
+    driveFolderName?: string,
+    dedupGroupId?: string
   ) {
     const folderPath = DiskUploader.getFolderPath(userId);
 
@@ -141,7 +154,10 @@ class DiskUploader implements IUploader {
       namePrefix,
       tempFileId,
       logger,
-      meetingLink
+      meetingLink,
+      userTokens,
+      driveFolderName,
+      dedupGroupId
     );
     return instance;
   }
@@ -436,6 +452,7 @@ class DiskUploader implements IUploader {
 
   public async saveTranscript(content: string): Promise<void> {
     try {
+      this.lastTranscriptContent = content;
       const folderPath = DiskUploader.getFolderPath(this._userId);
       const filePath = path.join(folderPath, `${this._tempFileId}.txt`);
       await fs.promises.writeFile(filePath, content, 'utf8');
@@ -779,6 +796,16 @@ class DiskUploader implements IUploader {
       metadata.recordingDurationSeconds = duration;
     }
 
+    if (this.userTokens) {
+      metadata.userTokens = typeof this.userTokens === 'string' ? this.userTokens : JSON.stringify(this.userTokens);
+    }
+    if (this.driveFolderName) {
+      metadata.driveFolderName = this.driveFolderName;
+    }
+    if (this.dedupGroupId) {
+      metadata.dedupGroupId = this.dedupGroupId;
+    }
+
     return metadata;
   }
 
@@ -805,7 +832,7 @@ class DiskUploader implements IUploader {
       if (config.uploaderType === 'screenapp') {
         uploadResult = await this.uploadRecordingToScreenApp();
       } else if (config.uploaderType === 's3') {
-        // Route to selected object storage provider (S3 or Azure) based on configuration
+        // Route to selected object storage provider (S3, Azure, or Drive) based on configuration
         uploadResult = await this.uploadRecordingToObjectStorage();
       } else {
         throw new Error(`Unsupported UPLOADER_TYPE configuration: ${config.uploaderType}`);
@@ -832,6 +859,8 @@ class DiskUploader implements IUploader {
               duration: this.recordingDuration,
               storage: this.lastStorageDetails,
               namePrefix: this._namePrefix,
+              transcriptText: this.lastTranscriptContent,
+              dedupGroupId: this.dedupGroupId,
             },
           };
           await notifyRecordingCompleted(payload, this._logger);
