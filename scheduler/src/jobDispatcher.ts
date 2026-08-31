@@ -18,6 +18,7 @@ export interface MeetingJobPayload {
   userTokens?: any;
   driveFolderName?: string;
   dedupGroupId?: string;
+  startTime?: Date | string;
 }
 
 let redisClient: Redis | null = null;
@@ -72,6 +73,7 @@ export async function dispatchMeetingJob(meeting: {
     userTokens: meeting.userTokens,
     driveFolderName: meeting.driveFolderName || 'RecordingBot',
     dedupGroupId: meeting.dedupGroupId,
+    startTime: meeting.startTime,
   };
 
   logger.info(`Enqueuing meeting job to Redis [${config.redisQueueName}]:`, {

@@ -157,7 +157,8 @@ export class RedisConsumerService {
           meetingParams.userTokens,
           meetingParams.driveFolderName,
           meetingParams.dedupGroupId,
-          meetingParams.recordingMode
+          meetingParams.recordingMode,
+          meetingParams.startTime
         );
 
         // Create and join the meeting

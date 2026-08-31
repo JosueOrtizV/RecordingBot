@@ -64,6 +64,7 @@ router.post('/join', requireAuth, async (req: Request, res: Response) => {
       recordingMode: mode,
       userTokens: googleTokens, // Pass OAuth tokens directly for Drive upload
       driveFolderName: settings.drive_folder_name || 'RecordingBot',
+      startTime: new Date().toISOString(),
     };
 
     await pushMeetingJob(jobPayload);

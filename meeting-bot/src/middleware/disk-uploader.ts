@@ -93,6 +93,7 @@ class DiskUploader implements IUploader {
   private diskWriteSuccess: LogAggregator;
 
   private _recordingMode: string = 'video';
+  private _startTime: Date;
   private forceUpload: boolean;
 
   private constructor(
@@ -108,7 +109,8 @@ class DiskUploader implements IUploader {
     userTokens?: any,
     driveFolderName?: string,
     dedupGroupId?: string,
-    recordingMode?: string
+    recordingMode?: string,
+    startTime?: Date | string
   ) {
     this._token = token;
     this._teamId = teamId;
@@ -123,6 +125,7 @@ class DiskUploader implements IUploader {
     this.driveFolderName = driveFolderName;
     this.dedupGroupId = dedupGroupId;
     this._recordingMode = recordingMode || 'video';
+    this._startTime = startTime ? new Date(startTime) : new Date();
 
     if (this._recordingMode === 'audio') {
       this.fileExtension = '.webm'; // Audio recorded as webm/opus initially, converted to .mp3 in finalize
@@ -148,7 +151,8 @@ class DiskUploader implements IUploader {
     userTokens?: any,
     driveFolderName?: string,
     dedupGroupId?: string,
-    recordingMode?: string
+    recordingMode?: string,
+    startTime?: Date | string
   ) {
     const folderPath = DiskUploader.getFolderPath(userId);
 
@@ -167,7 +171,8 @@ class DiskUploader implements IUploader {
       userTokens,
       driveFolderName,
       dedupGroupId,
-      recordingMode
+      recordingMode,
+      startTime
     );
     return instance;
   }
@@ -709,7 +714,7 @@ class DiskUploader implements IUploader {
     const chunkSize = this.UPLOAD_CHUNK_SIZE;
 
     // Compose key to preserve existing S3 layout for parity
-    const fileName = fileNameTemplate(this._namePrefix, getTimeString(this._timezone, this._logger));
+    const fileName = fileNameTemplate(this._namePrefix, getTimeString(this._timezone, this._logger, this._startTime));
     const key = `meeting-bot/${this._userId}/${fileName}${this.fileExtension}`;
 
     // Validate provider configuration before attempting upload

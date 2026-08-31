@@ -18,6 +18,7 @@ export interface MeetingJoinParams {
   userTokens?: any;
   driveFolderName?: string;
   dedupGroupId?: string;
+  startTime?: Date | string;
 }
 
 export interface MeetingJoinRedisParams extends MeetingJoinParams {
