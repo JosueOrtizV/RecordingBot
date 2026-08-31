@@ -53,6 +53,7 @@ export async function dispatchMeetingJob(meeting: {
   userTokens?: any;
   driveFolderName?: string;
   dedupGroupId?: string;
+  telegramChatId?: string;
 }): Promise<string> {
   const redis = getRedisClient();
   const botId = uuidv4();
@@ -83,13 +84,16 @@ export async function dispatchMeetingJob(meeting: {
 
   await redis.lpush(config.redisQueueName, JSON.stringify(payload));
 
-  await sendTelegramAlert(
-    `🤖 *Bot Despachado*\n` +
-    `📌 Reunión: *${meeting.title}*\n` +
-    `🔗 Enlace: ${meeting.url}\n` +
-    `👤 Nombre: ${payload.name}\n` +
-    `🕒 Inicio: ${meeting.startTime.toLocaleTimeString('es-MX', { timeZone: config.timezone })}`
-  );
+  if (meeting.telegramChatId) {
+    await sendTelegramAlert(
+      `🤖 *Bot Despachado*\n` +
+      `📌 Reunión: *${meeting.title}*\n` +
+      `🔗 Enlace: ${meeting.url}\n` +
+      `👤 Nombre: ${payload.name}\n` +
+      `🕒 Inicio: ${meeting.startTime.toLocaleTimeString('es-MX', { timeZone: config.timezone })}`,
+      meeting.telegramChatId
+    );
+  }
 
   return botId;
 }

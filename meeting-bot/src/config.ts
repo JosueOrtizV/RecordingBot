@@ -46,7 +46,7 @@ const constructRedisUri = () => {
 };
 
 const normalizeFileExtension = (extension?: string) => {
-  if (!extension) return '.webm';
+  if (!extension) return '.mp4';
   return extension.startsWith('.') ? extension : `.${extension}`;
 };
 

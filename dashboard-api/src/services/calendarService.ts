@@ -45,19 +45,22 @@ export async function isEventBlocked(userId: string, event: { title?: string | n
   return { blocked: false };
 }
 
-export async function syncUserCalendar(userId: string): Promise<any[]> {
+export async function syncUserCalendar(userId: string, customMin?: Date, customMax?: Date): Promise<any[]> {
   const auth = await getUserOAuth2Client(userId);
   const calendar = google.calendar({ version: 'v3', auth });
 
   const now = new Date();
-  const next7Days = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  // Fetch from 30 days in the past to 60 days in the future by default
+  const timeMin = customMin || new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const timeMax = customMax || new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
 
   const res = await calendar.events.list({
     calendarId: 'primary',
-    timeMin: now.toISOString(),
-    timeMax: next7Days.toISOString(),
+    timeMin: timeMin.toISOString(),
+    timeMax: timeMax.toISOString(),
     singleEvents: true,
     orderBy: 'startTime',
+    maxResults: 250,
   });
 
   const events = res.data.items || [];
@@ -87,6 +90,7 @@ export async function syncUserCalendar(userId: string): Promise<any[]> {
          meet_url = EXCLUDED.meet_url,
          start_time = EXCLUDED.start_time,
          end_time = EXCLUDED.end_time,
+         will_record = EXCLUDED.will_record,
          updated_at = NOW()
        RETURNING *`,
       [userId, eventId, title, meetUrl, startTime, endTime, willRecord]

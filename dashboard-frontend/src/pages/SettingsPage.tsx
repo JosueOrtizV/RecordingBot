@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { fetchApi } from '../api/client';
 import { BlocklistItem } from '../types';
-import { Settings, ShieldAlert, Plus, Trash2, CheckCircle2, Save, Video, Mic, FileText, Folder, Bot, Bell } from 'lucide-react';
+import { Settings, ShieldAlert, Plus, Trash2, CheckCircle2, Save, Video, Mic, FileText, Folder, Bot, Bell, Check, HelpCircle, Send, Info, X } from 'lucide-react';
 
 export const SettingsPage: React.FC = () => {
   const { user, settings, updateSettings } = useAuth();
@@ -18,6 +18,7 @@ export const SettingsPage: React.FC = () => {
 
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [showTelegramHelp, setShowTelegramHelp] = useState(false);
 
   // Blocklist states
   const [blocklist, setBlocklist] = useState<BlocklistItem[]>([]);
@@ -117,18 +118,18 @@ export const SettingsPage: React.FC = () => {
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       <div>
-        <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2.5">
-          <Settings className="w-6 h-6 text-sky-400" />
+        <h1 className="text-2xl font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-2.5 tracking-tight">
+          <Settings className="w-6 h-6 text-sky-500" />
           Configuración y Preferencias
         </h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Ajusta el comportamiento del bot, carpetas de destino y reglas de exclusión para tus reuniones.
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          Ajusta el comportamiento del bot, carpetas de Google Drive y reglas de exclusión para tus reuniones.
         </p>
       </div>
 
       {/* General Settings */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6">
-        <h2 className="text-base font-bold text-slate-100 border-b border-slate-800 pb-3">
+      <div className="bg-white dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-6 transition-colors">
+        <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 border-b border-slate-200/80 dark:border-slate-800 pb-3">
           Preferencias de Grabación
         </h2>
 
@@ -136,129 +137,166 @@ export const SettingsPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Bot Display Name */}
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
-                <Bot className="w-4 h-4 text-sky-400" />
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1.5">
+                <Bot className="w-4 h-4 text-sky-500" />
                 Nombre del Bot en la Llamada
               </label>
               <input
                 type="text"
                 value={botDisplayName}
                 onChange={(e) => setBotDisplayName(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-2xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-sky-500 transition-colors"
                 required
               />
-              <p className="text-[11px] text-slate-500 mt-1">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                 El nombre con el que el bot aparecerá en la lista de participantes de Google Meet.
               </p>
             </div>
 
             {/* Drive Folder Name */}
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
-                <Folder className="w-4 h-4 text-emerald-400" />
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2 flex items-center gap-1.5">
+                <Folder className="w-4 h-4 text-emerald-500" />
                 Carpeta en Google Drive
               </label>
               <input
                 type="text"
                 value={driveFolder}
                 onChange={(e) => setDriveFolder(e.target.value)}
-                className="w-full bg-slate-950/80 border border-slate-800 rounded-2xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500"
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-sky-500 transition-colors"
                 required
               />
-              <p className="text-[11px] text-slate-500 mt-1">
-                Nombre de la carpeta principal donde se organizarán tus grabaciones por fecha.
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                Nombre de la carpeta principal en tu Drive donde se organizarán tus archivos.
               </p>
             </div>
           </div>
 
           {/* Feature Toggles */}
           <div className="pt-2">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-3">
               Módulos Predeterminados para Nuevas Grabaciones
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <label className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-start gap-3 cursor-pointer hover:border-slate-700 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={enableVideo}
-                  onChange={(e) => setEnableVideo(e.target.checked)}
-                  className="mt-1 w-4 h-4 rounded text-sky-500 bg-slate-900 border-slate-700 focus:ring-0"
-                />
+              {/* Toggle Video */}
+              <div
+                onClick={() => setEnableVideo(!enableVideo)}
+                className={`p-4 rounded-2xl border flex items-start justify-between cursor-pointer transition-all ${
+                  enableVideo
+                    ? 'bg-sky-500/10 border-sky-500/40 shadow-sm'
+                    : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 opacity-60'
+                }`}
+              >
                 <div>
-                  <div className="flex items-center gap-1.5 font-semibold text-xs text-slate-200">
-                    <Video className="w-4 h-4 text-sky-400" />
-                    Grabar Video
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                    <Video className="w-4 h-4 text-sky-500" />
+                    <span>Grabar Video</span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">Captura pantalla y video WebM</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Captura WebM</p>
                 </div>
-              </label>
+                <div
+                  className={`w-5 h-5 rounded-lg flex items-center justify-center transition-colors ${
+                    enableVideo ? 'bg-sky-500 text-white' : 'bg-slate-300 dark:bg-slate-700'
+                  }`}
+                >
+                  {enableVideo && <Check className="w-3.5 h-3.5" />}
+                </div>
+              </div>
 
-              <label className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-start gap-3 cursor-pointer hover:border-slate-700 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={enableAudio}
-                  onChange={(e) => setEnableAudio(e.target.checked)}
-                  className="mt-1 w-4 h-4 rounded text-sky-500 bg-slate-900 border-slate-700 focus:ring-0"
-                />
+              {/* Toggle Audio */}
+              <div
+                onClick={() => setEnableAudio(!enableAudio)}
+                className={`p-4 rounded-2xl border flex items-start justify-between cursor-pointer transition-all ${
+                  enableAudio
+                    ? 'bg-emerald-500/10 border-emerald-500/40 shadow-sm'
+                    : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 opacity-60'
+                }`}
+              >
                 <div>
-                  <div className="flex items-center gap-1.5 font-semibold text-xs text-slate-200">
-                    <Mic className="w-4 h-4 text-emerald-400" />
-                    Grabar Audio
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                    <Mic className="w-4 h-4 text-emerald-500" />
+                    <span>Grabar Audio</span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">Audio nítido de la sala</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Audio nítido</p>
                 </div>
-              </label>
+                <div
+                  className={`w-5 h-5 rounded-lg flex items-center justify-center transition-colors ${
+                    enableAudio ? 'bg-emerald-500 text-white' : 'bg-slate-300 dark:bg-slate-700'
+                  }`}
+                >
+                  {enableAudio && <Check className="w-3.5 h-3.5" />}
+                </div>
+              </div>
 
-              <label className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 flex items-start gap-3 cursor-pointer hover:border-slate-700 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={enableTranscription}
-                  onChange={(e) => setEnableTranscription(e.target.checked)}
-                  className="mt-1 w-4 h-4 rounded text-sky-500 bg-slate-900 border-slate-700 focus:ring-0"
-                />
+              {/* Toggle Transcription */}
+              <div
+                onClick={() => setEnableTranscription(!enableTranscription)}
+                className={`p-4 rounded-2xl border flex items-start justify-between cursor-pointer transition-all ${
+                  enableTranscription
+                    ? 'bg-indigo-500/10 border-indigo-500/40 shadow-sm'
+                    : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 opacity-60'
+                }`}
+              >
                 <div>
-                  <div className="flex items-center gap-1.5 font-semibold text-xs text-slate-200">
-                    <FileText className="w-4 h-4 text-indigo-400" />
-                    Transcripción
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                    <FileText className="w-4 h-4 text-indigo-500" />
+                    <span>Transcripción</span>
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">Minuta en texto e IA</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Minuta en texto</p>
                 </div>
-              </label>
+                <div
+                  className={`w-5 h-5 rounded-lg flex items-center justify-center transition-colors ${
+                    enableTranscription ? 'bg-indigo-500 text-white' : 'bg-slate-300 dark:bg-slate-700'
+                  }`}
+                >
+                  {enableTranscription && <Check className="w-3.5 h-3.5" />}
+                </div>
+              </div>
             </div>
           </div>
 
           {/* Telegram Notifications */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
-              <Bell className="w-4 h-4 text-amber-400" />
-              Telegram Chat ID para Notificaciones Personales (Opcional)
-            </label>
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                <Bell className="w-4 h-4 text-amber-500" />
+                <span>Telegram Chat ID para Notificaciones Personales (Opcional)</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowTelegramHelp(true)}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                <span>¿Cómo obtener mi Chat ID?</span>
+              </button>
+            </div>
             <input
               type="text"
               value={telegramChatId}
               onChange={(e) => setTelegramChatId(e.target.value)}
-              placeholder="Ej. 6859555639"
-              className="w-full sm:w-80 bg-slate-950/80 border border-slate-800 rounded-2xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500"
+              placeholder="Ej. 123456789"
+              className="w-full sm:w-80 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-sky-500 transition-colors"
             />
-            <p className="text-[11px] text-slate-500 mt-1">
-              Si configuras tu ID, recibirás alertas automáticas cuando tus grabaciones concluyan.
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              Si configuras tu Chat ID, recibirás mensajes directos cuando tus grabaciones concluyan.
             </p>
           </div>
 
-          <div className="flex items-center gap-4 pt-4 border-t border-slate-800">
+          <div className="flex items-center gap-4 pt-4 border-t border-slate-200/80 dark:border-slate-800">
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white font-semibold px-6 py-3 rounded-2xl text-xs transition-all shadow-lg shadow-sky-600/25 active:scale-95 disabled:opacity-50"
+              className="flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white font-semibold px-6 py-3 rounded-2xl text-xs transition-all shadow-md shadow-sky-600/25 active:scale-95 disabled:opacity-50 cursor-pointer"
             >
               <Save className="w-4 h-4" />
               <span>{saving ? 'Guardando...' : 'Guardar Preferencias'}</span>
             </button>
 
             {savedSuccess && (
-              <span className="flex items-center gap-1 text-xs text-emerald-400 font-semibold animate-in fade-in">
+              <span className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-semibold animate-in fade-in">
                 <CheckCircle2 className="w-4 h-4" />
-                Preferencias guardadas exitosamente
+                Preferencias actualizadas con éxito
               </span>
             )}
           </div>
@@ -266,26 +304,26 @@ export const SettingsPage: React.FC = () => {
       </div>
 
       {/* Meeting Blocklist Manager */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6">
+      <div className="bg-white dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-6 transition-colors">
         <div>
-          <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
-            <ShieldAlert className="w-5 h-5 text-rose-400" />
-            Reglas de Bloqueo (Reuniones Baneadas)
+          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <ShieldAlert className="w-5 h-5 text-rose-500" />
+            Reglas de Bloqueo (Reuniones Excluidas)
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             Configura reglas para que el bot <strong>nunca ingrese</strong> a reuniones privadas, 1-on-1s o con ciertas palabras clave en el título.
           </p>
         </div>
 
         {/* Add rule form */}
-        <form onSubmit={handleAddBlocklist} className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-3">
-          <p className="text-xs font-semibold text-slate-300">Añadir nueva regla de exclusión:</p>
+        <form onSubmit={handleAddBlocklist} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3">
+          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Añadir nueva regla de exclusión:</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <select
                 value={newMatchType}
                 onChange={(e) => setNewMatchType(e.target.value as any)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-500"
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-sky-500"
               >
                 <option value="title_contains">Título contiene palabra</option>
                 <option value="url">URL contiene fragmento</option>
@@ -299,7 +337,7 @@ export const SettingsPage: React.FC = () => {
                 value={newMatchValue}
                 onChange={(e) => setNewMatchValue(e.target.value)}
                 placeholder={newMatchType === 'title_contains' ? 'Ej. 1:1, Privada, Personal' : 'Ej. meet.google.com/xxx...'}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-sky-500"
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-sky-500"
                 required
               />
             </div>
@@ -310,7 +348,7 @@ export const SettingsPage: React.FC = () => {
                 value={newReason}
                 onChange={(e) => setNewReason(e.target.value)}
                 placeholder="Razón / Nota (Opcional)"
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-sky-500"
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:border-sky-500"
               />
             </div>
           </div>
@@ -319,7 +357,7 @@ export const SettingsPage: React.FC = () => {
             <button
               type="submit"
               disabled={addingRule || !newMatchValue.trim()}
-              className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold px-4 py-2 rounded-xl text-xs transition-all disabled:opacity-50"
+              className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold px-4 py-2 rounded-xl text-xs transition-all disabled:opacity-50 cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Añadir Regla</span>
@@ -330,30 +368,30 @@ export const SettingsPage: React.FC = () => {
         {/* Existing rules list */}
         <div className="space-y-2">
           {loadingBlocklist ? (
-            <p className="text-xs text-slate-500 py-4 text-center">Cargando reglas...</p>
+            <p className="text-xs text-slate-400 py-4 text-center">Cargando reglas...</p>
           ) : blocklist.length === 0 ? (
-            <p className="text-xs text-slate-500 py-4 text-center border border-dashed border-slate-800 rounded-2xl">
+            <p className="text-xs text-slate-500 dark:text-slate-400 py-4 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
               No tienes reuniones bloqueadas. El bot ingresará a las reuniones válidas de tu calendario.
             </p>
           ) : (
             blocklist.map((item) => (
               <div
                 key={item.id}
-                className="p-3 rounded-2xl bg-slate-950/40 border border-slate-800/80 flex items-center justify-between gap-3 text-xs"
+                className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/40 border border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between gap-3 text-xs"
               >
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px]">
+                    <span className="px-2 py-0.5 rounded-md bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[10px] font-semibold">
                       {item.match_type === 'title_contains' ? 'Título contiene' : item.match_type === 'url' ? 'URL contiene' : 'ID evento'}
                     </span>
-                    <span className="font-semibold text-slate-200">"{item.match_value}"</span>
+                    <span className="font-bold text-slate-900 dark:text-slate-100">"{item.match_value}"</span>
                   </div>
-                  {item.reason && <p className="text-[11px] text-slate-500">Razón: {item.reason}</p>}
+                  {item.reason && <p className="text-[11px] text-slate-500 dark:text-slate-400">Razón: {item.reason}</p>}
                 </div>
 
                 <button
                   onClick={() => handleDeleteRule(item.id)}
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
                   title="Eliminar regla"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -363,6 +401,115 @@ export const SettingsPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Telegram Help Modal */}
+      {showTelegramHelp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5 animate-in zoom-in-95 duration-150">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-2xl bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
+                  <Send className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                    Configurar Alertas de Telegram
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Paso a paso para recibir alertas personales en tu Telegram.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTelegramHelp(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Steps list */}
+            <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 flex items-start gap-3">
+                <span className="w-6 h-6 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 font-bold text-xs flex items-center justify-center shrink-0 border border-sky-500/20">
+                  1
+                </span>
+                <div className="space-y-1">
+                  <p className="font-semibold text-slate-900 dark:text-slate-100">
+                    Abre el bot de información en Telegram
+                  </p>
+                  <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+                    Entra a Telegram y busca{' '}
+                    <a
+                      href="https://t.me/userinfobot"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sky-600 dark:text-sky-400 font-semibold underline"
+                    >
+                      @userinfobot
+                    </a>{' '}
+                    (o también{' '}
+                    <a
+                      href="https://t.me/raw_data_bot"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sky-600 dark:text-sky-400 font-semibold underline"
+                    >
+                      @raw_data_bot
+                    </a>
+                    ) y pulsa <strong>Iniciar</strong>.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 flex items-start gap-3">
+                <span className="w-6 h-6 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold text-xs flex items-center justify-center shrink-0 border border-indigo-500/20">
+                  2
+                </span>
+                <div className="space-y-1">
+                  <p className="font-semibold text-slate-900 dark:text-slate-100">
+                    Copia tu número de Id
+                  </p>
+                  <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+                    El bot te enviará un mensaje con tu información personal. Copia el número de la línea <strong>Id:</strong> (ej. <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded font-mono text-[10px]">123456789</code>).
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 flex items-start gap-3">
+                <span className="w-6 h-6 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs flex items-center justify-center shrink-0 border border-emerald-500/20">
+                  3
+                </span>
+                <div className="space-y-1">
+                  <p className="font-semibold text-slate-900 dark:text-slate-100">
+                    Pégalo en el panel y guarda
+                  </p>
+                  <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+                    Pega ese número en el campo <strong>Telegram Chat ID</strong> y haz clic en <strong>Guardar Preferencias</strong>.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-[11px] flex items-start gap-2">
+                <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Nota:</strong> Este campo es totalmente opcional. Si no lo configuras, el bot funcionará con normalidad y solo registrará la actividad en logs sin enviar mensajes a Telegram.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setShowTelegramHelp(false)}
+                className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded-2xl shadow-md shadow-sky-600/20 transition-all cursor-pointer"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

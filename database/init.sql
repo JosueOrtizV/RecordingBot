@@ -1,4 +1,4 @@
-﻿-- ============================================
+-- ============================================
 -- RecordingBot Database Schema
 -- Multi-User Recording & Dashboard System
 -- ============================================
@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
     enable_audio BOOLEAN DEFAULT true,
     enable_transcription BOOLEAN DEFAULT true,
     drive_folder_name VARCHAR(255) DEFAULT 'RecordingBot',
+    drive_folder_id VARCHAR(255),
     max_recording_minutes INTEGER DEFAULT 180,
     auto_join BOOLEAN DEFAULT true,        -- auto-join desde calendario
     telegram_chat_id VARCHAR(50),          -- notificaciones personalizadas

@@ -12,6 +12,7 @@ export interface UserSettings {
   enable_audio: boolean;
   enable_transcription: boolean;
   drive_folder_name: string;
+  drive_folder_id?: string;
   max_recording_minutes: number;
   auto_join: boolean;
   telegram_chat_id?: string;

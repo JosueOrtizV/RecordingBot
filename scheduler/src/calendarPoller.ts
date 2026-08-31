@@ -147,6 +147,7 @@ export async function pollCalendar(): Promise<void> {
                meet_url = EXCLUDED.meet_url,
                start_time = EXCLUDED.start_time,
                end_time = EXCLUDED.end_time,
+               will_record = EXCLUDED.will_record,
                updated_at = NOW()`,
             [user.id, event.id, title, meetUrl, startTime, endTime, willRecord]
           );
@@ -225,6 +226,7 @@ export async function pollCalendar(): Promise<void> {
       userTokens: primary.user.google_tokens,
       driveFolderName: primary.user.drive_folder_name || 'RecordingBot',
       dedupGroupId,
+      telegramChatId: primary.user.telegram_chat_id,
     });
 
     // Mark scheduled meetings as dispatched and link dedup group in DB

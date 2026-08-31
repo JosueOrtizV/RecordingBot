@@ -4,7 +4,6 @@ import { requireAuth } from '../middleware/auth.js';
 import { query } from '../db.js';
 import { config } from '../config.js';
 import { pushMeetingJob, getQueueStats } from '../services/redisService.js';
-import { isEventBlocked } from '../services/calendarService.js';
 
 const router = Router();
 
@@ -23,20 +22,6 @@ router.post('/join', requireAuth, async (req: Request, res: Response) => {
     const meetRegex = /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}([\?#].*)?$/i;
     if (!meetRegex.test(cleanUrl)) {
       res.status(400).json({ error: 'URL de Google Meet inválida. Formato esperado: https://meet.google.com/xxx-xxxx-xxx' });
-      return;
-    }
-
-    // Check user blocklist
-    const blockCheck = await isEventBlocked(user.id, {
-      title: meetingTitle,
-      url: cleanUrl,
-      eventId: 'manual_join',
-    });
-
-    if (blockCheck.blocked) {
-      res.status(400).json({
-        error: `Esta reunión coincide con tu regla de bloqueo: ${blockCheck.reason}. Elimina la regla en Configuración si deseas grabarla.`,
-      });
       return;
     }
 

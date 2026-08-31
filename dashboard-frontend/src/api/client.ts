@@ -1,5 +1,4 @@
-const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-export const API_BASE = import.meta.env.VITE_API_URL || (isLocal ? '' : 'https://api.recordingbot.josueortiz.dev');
+﻿export const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE}${endpoint}`;

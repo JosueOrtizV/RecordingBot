@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../api/client';
 import { WorkerStatus } from '../types';
-import { Radio, Loader2 } from 'lucide-react';
+import { Radio, Loader2, User, Cpu } from 'lucide-react';
 
 export const ActiveRecordingsBanner: React.FC = () => {
   const [status, setStatus] = useState<WorkerStatus | null>(null);
@@ -32,30 +32,43 @@ export const ActiveRecordingsBanner: React.FC = () => {
   if (!hasActive && !hasQueue) return null;
 
   return (
-    <div className="mb-6 space-y-2">
+    <div className="mb-6 space-y-3">
       {hasActive && (
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-950/40 via-purple-950/20 to-slate-900 border border-rose-500/30 shadow-lg shadow-rose-950/20">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2 text-rose-400 font-semibold text-sm">
+        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-rose-500/10 via-indigo-500/10 to-sky-500/10 border border-rose-500/30 dark:border-rose-500/20 shadow-lg shadow-rose-500/5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 font-bold text-sm">
               <span className="relative flex h-3 w-3">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
               </span>
               <Radio className="w-4 h-4" />
-              <span>Grabación en Curso ({status.activeRecordings.length})</span>
+              <span>Grabación en Vivo ({status.activeRecordings.length})</span>
             </div>
-            <span className="text-xs text-slate-400">Workers Ocupados: {status.workers.active} / {status.workers.total}</span>
+            <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-medium">
+              <Cpu className="w-3.5 h-3.5" />
+              <span>Workers: {status.workers.active} / {status.workers.total}</span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
             {status.activeRecordings.map((rec) => (
-              <div key={rec.id} className="bg-slate-900/80 border border-slate-800 p-2.5 rounded-xl flex items-center justify-between text-xs">
+              <div
+                key={rec.id}
+                className="bg-white/90 dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 p-3 rounded-2xl flex items-center justify-between text-xs shadow-sm"
+              >
                 <div className="truncate mr-2">
-                  <p className="font-medium text-slate-200 truncate">{rec.meeting_title || 'Reunión'}</p>
-                  <p className="text-slate-400 text-[11px] truncate">👤 {rec.user_name} • Modo: {rec.recording_mode}</p>
+                  <p className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                    {rec.meeting_title || 'Reunión en Curso'}
+                  </p>
+                  <p className="text-slate-500 dark:text-slate-400 text-[11px] flex items-center gap-1 mt-0.5 truncate">
+                    <User className="w-3 h-3 text-slate-400" />
+                    <span>{rec.user_name}</span>
+                    <span>•</span>
+                    <span className="capitalize">{rec.recording_mode}</span>
+                  </p>
                 </div>
-                <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-mono text-[10px] shrink-0 animate-pulse">
-                  EN VIVO
+                <span className="px-2.5 py-1 rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-mono text-[10px] font-bold shrink-0 animate-pulse">
+                  GRABANDO
                 </span>
               </div>
             ))}
@@ -64,12 +77,16 @@ export const ActiveRecordingsBanner: React.FC = () => {
       )}
 
       {hasQueue && (
-        <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/20 flex items-center justify-between text-xs text-amber-300">
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between text-xs text-amber-700 dark:text-amber-300">
           <div className="flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-            <span>Cola de espera: <strong>{status.queue.pending}</strong> reunión(es) esperando un worker libre</span>
+            <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
+            <span>
+              Cola de espera: <strong>{status.queue.pending}</strong> reunión(es) esperando worker
+            </span>
           </div>
-          <span className="text-slate-400">Los workers se asignarán en orden de llegada</span>
+          <span className="text-slate-500 dark:text-slate-400 hidden sm:inline text-[11px]">
+            Asignación automática por orden de llegada
+          </span>
         </div>
       )}
     </div>

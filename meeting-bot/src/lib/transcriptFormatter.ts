@@ -10,6 +10,15 @@ export interface CaptionEntry {
 
 export class TranscriptFormatter {
   private entries: CaptionEntry[] = [];
+  private meetingTitle?: string;
+
+  constructor(meetingTitle?: string) {
+    this.meetingTitle = meetingTitle;
+  }
+
+  setMeetingTitle(title: string) {
+    this.meetingTitle = title;
+  }
 
   addEntry(timestamp: string, speaker: string, text: string, elementId?: string) {
     const cleanSpeaker = (speaker || 'Participante Desconocido').trim();
@@ -56,13 +65,17 @@ export class TranscriptFormatter {
   }
 
   format(): string {
+    const titleText = this.meetingTitle ? `: ${this.meetingTitle}` : '';
+    const dateStr = new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+
     if (this.entries.length === 0) {
-      return `[${new Date().toLocaleTimeString('es-MX')}] (No se detectaron subtítulos durante la reunión)\n`;
+      return `=====================================================\n  TRANSCRIPCIÓN DE REUNIÓN${titleText}\n  FECHA: ${dateStr}\n=====================================================\n\n[${new Date().toLocaleTimeString('es-MX')}] (No se detectaron subtítulos durante la reunión)\n`;
     }
 
     const lines: string[] = [];
     lines.push('=====================================================');
-    lines.push(`  TRANSCRIPCIÓN DE REUNIÓN - ${new Date().toLocaleDateString('es-MX')}`);
+    lines.push(`  TRANSCRIPCIÓN DE REUNIÓN${titleText}`);
+    lines.push(`  FECHA: ${dateStr}`);
     lines.push('=====================================================\n');
 
     let currentSpeaker = '';

@@ -37,12 +37,16 @@ async function startNotificationListener() {
         }
 
         const durationSecs = data.metadata?.duration || data.metadata?.storage?.duration || 0;
-        const recordingId = data.recordingId || data.metadata?.botId;
+        const botId = data.metadata?.botId || '';
+        const eventId = data.metadata?.eventId || '';
+        const recordingId = data.recordingId || botId;
         const transcriptText = data.metadata?.transcriptText || data.transcriptText || null;
         const dedupGroupId = data.metadata?.dedupGroupId;
 
         logger.info('Received recording completion notification:', {
           recordingId,
+          botId,
+          eventId,
           title,
           driveUrl,
           durationSecs,
@@ -51,7 +55,7 @@ async function startNotificationListener() {
 
         // Update DB
         try {
-          if (recordingId) {
+          if (recordingId || botId || eventId) {
             await query(
               `UPDATE recordings
                SET status = 'completed',
@@ -60,8 +64,8 @@ async function startNotificationListener() {
                    duration_seconds = COALESCE($3, duration_seconds),
                    transcript_text = COALESCE($4, transcript_text),
                    completed_at = NOW()
-               WHERE id = $5 OR calendar_event_id = $5`,
-              [driveUrl, fileId, durationSecs, transcriptText, recordingId]
+               WHERE id::text = $5 OR calendar_event_id = $5 OR id::text = $6 OR calendar_event_id = $6`,
+              [driveUrl, fileId, durationSecs, transcriptText, recordingId, botId || eventId]
             );
           }
 
@@ -75,7 +79,7 @@ async function startNotificationListener() {
                    duration_seconds = COALESCE($3, duration_seconds),
                    transcript_text = COALESCE($4, transcript_text),
                    completed_at = NOW()
-               WHERE dedup_group_id = $5`,
+               WHERE dedup_group_id::text = $5`,
               [driveUrl, fileId, durationSecs, transcriptText, dedupGroupId]
             );
           }
@@ -83,17 +87,39 @@ async function startNotificationListener() {
           logger.warn('Failed to update completed recording in DB:', dbErr);
         }
 
-        await sendTelegramAlert(
-          `✅ *Grabación Completada y Subida a Drive*\n` +
-          `📌 Reunión: *${title}*\n` +
-          `📁 Enlace: ${driveUrl || 'En tu Google Drive'}\n` +
-          `⏱️ Duración: ${durationSecs ? Math.round(durationSecs / 60) + ' min' : 'N/A'}`
-        );
+        // Lookup user's telegram_chat_id
+        let userChatId: string | null = null;
+        try {
+          const chatRes = await query(
+            `SELECT s.telegram_chat_id
+             FROM recordings r
+             JOIN user_settings s ON s.user_id = r.user_id
+             WHERE (r.id::text = $1 OR r.calendar_event_id = $1 OR r.dedup_group_id::text = $2)
+               AND s.telegram_chat_id IS NOT NULL AND s.telegram_chat_id != ''
+             LIMIT 1`,
+            [recordingId || '', dedupGroupId || '']
+          );
+          userChatId = chatRes.rows[0]?.telegram_chat_id || null;
+        } catch (e) {
+          // Ignore
+        }
+
+        if (userChatId) {
+          await sendTelegramAlert(
+            `✅ *Grabación Completada y Subida a Drive*\n` +
+            `📌 Reunión: *${title}*\n` +
+            `📁 Enlace: ${driveUrl || 'En tu Google Drive'}\n` +
+            `⏱️ Duración: ${durationSecs ? Math.round(durationSecs / 60) + ' min' : 'N/A'}`,
+            userChatId
+          );
+        }
       } else if (listName === config.redisFailureList) {
         logger.warn('Received recording failure notification:', data);
 
         const title = data.metadata?.meetingTitle || data.metadata?.namePrefix || data.metadata?.meetingName || 'Reunión';
-        const recordingId = data.recordingId || data.metadata?.botId;
+        const botId = data.metadata?.botId || '';
+        const eventId = data.metadata?.eventId || '';
+        const recordingId = data.recordingId || botId;
         const dedupGroupId = data.metadata?.dedupGroupId;
 
         let rawReason = '';
@@ -124,14 +150,14 @@ async function startNotificationListener() {
 
         // Update DB
         try {
-          if (recordingId) {
+          if (recordingId || botId || eventId) {
             await query(
               `UPDATE recordings
                SET status = 'failed',
                    error_message = $1,
                    completed_at = NOW()
-               WHERE id = $2 OR calendar_event_id = $2`,
-              [friendlyReason, recordingId]
+               WHERE id::text = $2 OR calendar_event_id = $2 OR id::text = $3 OR calendar_event_id = $3`,
+              [friendlyReason, recordingId, botId || eventId]
             );
           }
           if (dedupGroupId) {
@@ -140,7 +166,7 @@ async function startNotificationListener() {
                SET status = 'failed',
                    error_message = $1,
                    completed_at = NOW()
-               WHERE dedup_group_id = $2`,
+               WHERE dedup_group_id::text = $2`,
               [friendlyReason, dedupGroupId]
             );
           }
@@ -148,11 +174,31 @@ async function startNotificationListener() {
           logger.warn('Failed to update failed recording in DB:', dbErr);
         }
 
-        await sendTelegramAlert(
-          `⚠️ *Error en Grabación de Reunión*\n` +
-          `📌 Reunión: *${title}*\n` +
-          `❌ Razón: ${friendlyReason}`
-        );
+        // Lookup user's telegram_chat_id
+        let userChatId: string | null = null;
+        try {
+          const chatRes = await query(
+            `SELECT s.telegram_chat_id
+             FROM recordings r
+             JOIN user_settings s ON s.user_id = r.user_id
+             WHERE (r.id::text = $1 OR r.calendar_event_id = $1 OR r.dedup_group_id::text = $2)
+               AND s.telegram_chat_id IS NOT NULL AND s.telegram_chat_id != ''
+             LIMIT 1`,
+            [recordingId || botId || eventId || '', dedupGroupId || '']
+          );
+          userChatId = chatRes.rows[0]?.telegram_chat_id || null;
+        } catch (e) {
+          // Ignore
+        }
+
+        if (userChatId) {
+          await sendTelegramAlert(
+            `⚠️ *Error en Grabación de Reunión*\n` +
+            `📌 Reunión: *${title}*\n` +
+            `❌ Razón: ${friendlyReason}`,
+            userChatId
+          );
+        }
       }
     } catch (err: any) {
       logger.error('Error in Redis notification listener:', err?.message || err);

@@ -1,11 +1,11 @@
 import { config } from './config';
 import { logger } from './logger';
 
-export async function sendTelegramAlert(message: string): Promise<void> {
+export async function sendTelegramAlert(message: string, customChatId?: string | null): Promise<void> {
   logger.info(`[Telegram Alert]: ${message}`);
 
   const token = config.telegramBotToken;
-  const chatId = config.telegramChatId;
+  const chatId = customChatId || config.telegramChatId;
 
   if (!token || !chatId) {
     logger.warn('Telegram token or chat ID not configured. Skipping alert.');

@@ -92,6 +92,7 @@ class DiskUploader implements IUploader {
   private writing: boolean;
   private diskWriteSuccess: LogAggregator;
 
+  private _recordingMode: string = 'video';
   private forceUpload: boolean;
 
   private constructor(
@@ -106,7 +107,8 @@ class DiskUploader implements IUploader {
     meetingLink?: string,
     userTokens?: any,
     driveFolderName?: string,
-    dedupGroupId?: string
+    dedupGroupId?: string,
+    recordingMode?: string
   ) {
     this._token = token;
     this._teamId = teamId;
@@ -120,6 +122,12 @@ class DiskUploader implements IUploader {
     this.userTokens = userTokens;
     this.driveFolderName = driveFolderName;
     this.dedupGroupId = dedupGroupId;
+    this._recordingMode = recordingMode || 'video';
+
+    if (this._recordingMode === 'audio') {
+      this.fileExtension = '.webm'; // Audio recorded as webm/opus initially, converted to .mp3 in finalize
+      this.contentType = 'audio/webm' as ContentType;
+    }
 
     this.queue = [];
     this.writing = false;
@@ -139,7 +147,8 @@ class DiskUploader implements IUploader {
     meetingLink?: string,
     userTokens?: any,
     driveFolderName?: string,
-    dedupGroupId?: string
+    dedupGroupId?: string,
+    recordingMode?: string
   ) {
     const folderPath = DiskUploader.getFolderPath(userId);
 
@@ -157,7 +166,8 @@ class DiskUploader implements IUploader {
       meetingLink,
       userTokens,
       driveFolderName,
-      dedupGroupId
+      dedupGroupId,
+      recordingMode
     );
     return instance;
   }
@@ -609,8 +619,36 @@ class DiskUploader implements IUploader {
         await this.writeWithRetries();
       }
 
-      const filePath = DiskUploader.getFilePath(this._userId, this._tempFileId, this.fileExtension);
-      await this.ensureRequestedContainer(filePath);
+      if (this._recordingMode === 'audio') {
+        const inputPath = DiskUploader.getFilePath(this._userId, this._tempFileId, '.webm');
+        const outputPath = DiskUploader.getFilePath(this._userId, this._tempFileId, '.mp3');
+        if (fs.existsSync(inputPath)) {
+          this._logger.info('Converting audio recording to MP3 format...', { inputPath, outputPath });
+          try {
+            await execFileAsync('ffmpeg', [
+              '-y',
+              '-i', inputPath,
+              '-vn',
+              '-c:a', 'libmp3lame',
+              '-b:a', '128k',
+              outputPath,
+            ], { maxBuffer: 10 * 1024 * 1024 });
+            if (fs.existsSync(outputPath)) {
+              await fs.promises.unlink(inputPath).catch(() => {});
+              this.fileExtension = '.mp3';
+              this.contentType = 'audio/mpeg' as ContentType;
+            }
+          } catch (audioErr) {
+            this._logger.warn('Failed to convert audio to MP3, keeping original WebM audio:', audioErr);
+          }
+        }
+      } else {
+        const filePath = DiskUploader.getFilePath(this._userId, this._tempFileId, this.fileExtension);
+        await this.ensureRequestedContainer(filePath);
+        await this.ensureWebmDurationMetadata(filePath);
+      }
+
+      const activeFilePath = DiskUploader.getFilePath(this._userId, this._tempFileId, this.fileExtension);
 
       if (!this.recordingDuration && this.firstChunkReceivedAt) {
         const elapsedSeconds = Math.round((Date.now() - this.firstChunkReceivedAt) / 1000);
@@ -624,9 +662,7 @@ class DiskUploader implements IUploader {
         }
       }
 
-      await this.ensureWebmDurationMetadata(filePath);
-
-      const probedDuration = await this.getMediaDuration(filePath);
+      const probedDuration = await this.getMediaDuration(activeFilePath);
       if (typeof probedDuration === 'number') {
         this.recordingDuration = probedDuration;
       }
@@ -743,6 +779,15 @@ class DiskUploader implements IUploader {
               blobPrefix: config.azureBlobStorage.blobPrefix,
               duration: this.recordingDuration,
             };
+          } else if (provider.name === 'drive') {
+            const driveUrl = (provider as any).lastUploadedWebLink || (typeof (provider as any).getSignedUrl === 'function' ? await (provider as any).getSignedUrl(key) : undefined);
+            this.lastUploadedBlobUrl = driveUrl;
+            this.lastStorageDetails = {
+              provider: 'drive',
+              key,
+              url: this.lastUploadedBlobUrl,
+              duration: this.recordingDuration,
+            };
           }
         } catch (metaErr) {
           this._logger.warn('Unable to compute storage metadata/url for notification', metaErr as any);
@@ -805,6 +850,9 @@ class DiskUploader implements IUploader {
     if (this.dedupGroupId) {
       metadata.dedupGroupId = this.dedupGroupId;
     }
+    if (this._recordingMode) {
+      metadata.recordingMode = this._recordingMode;
+    }
 
     return metadata;
   }
@@ -813,6 +861,45 @@ class DiskUploader implements IUploader {
     try {
       if (typeof options?.forceUpload === 'boolean') {
         this.forceUpload = options.forceUpload;
+      }
+
+      if (this._recordingMode === 'transcript_only') {
+        this._logger.info('Transcript-only mode active. Skipping media upload and processing transcript upload...');
+        let uploadResult = false;
+        if (config.uploaderType === 's3') {
+          uploadResult = await this.uploadRecordingToObjectStorage();
+        }
+        await this.deleteTempFileAsync();
+        if (uploadResult) {
+          try {
+            const payload: RecordingCompletedPayload = {
+              recordingId: this._botId ?? this.lastRecordingId ?? this._tempFileId,
+              meetingLink: this._meetingLink,
+              status: 'completed',
+              blobUrl: this.lastUploadedBlobUrl,
+              timestamp: new Date().toISOString(),
+              metadata: {
+                userId: this._userId,
+                teamId: this._teamId,
+                botId: this._botId,
+                contentType: 'text/plain',
+                uploaderType: config.uploaderType,
+                duration: this.recordingDuration || 0,
+                storage: this.lastStorageDetails,
+                namePrefix: this._namePrefix,
+                transcriptText: this.lastTranscriptContent,
+                userTokens: this.userTokens ? (typeof this.userTokens === 'string' ? this.userTokens : JSON.stringify(this.userTokens)) : undefined,
+                driveFolderName: this.driveFolderName,
+                dedupGroupId: this.dedupGroupId,
+                recordingMode: this._recordingMode,
+              }
+            };
+            await notifyRecordingCompleted(payload, this._logger);
+          } catch (notifErr) {
+            this._logger.warn('Failed to send recording completion notification:', notifErr);
+          }
+        }
+        return uploadResult;
       }
 
       if (!await this.tempFileExists()) {
@@ -845,7 +932,7 @@ class DiskUploader implements IUploader {
       if (uploadResult) {
         try {
           const payload: RecordingCompletedPayload = {
-            recordingId: this.lastRecordingId ?? this._tempFileId,
+            recordingId: this._botId ?? this.lastRecordingId ?? this._tempFileId,
             meetingLink: this._meetingLink,
             status: 'completed',
             blobUrl: this.lastUploadedBlobUrl,

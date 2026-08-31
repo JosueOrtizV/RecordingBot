@@ -1,10 +1,12 @@
 import React, { useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { CheckCircle2, AlertTriangle } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
+import { AlertTriangle, Radio, Calendar, HardDrive, Cpu, Sun, Moon } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
   const { user, loginWithGoogle, isLoading } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const error = searchParams.get('error');
@@ -16,30 +18,42 @@ export const LoginPage: React.FC = () => {
   }, [user, isLoading, navigate]);
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 relative overflow-hidden">
-      {/* Background glow */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-sky-500/10 rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute bottom-10 right-10 w-[400px] h-[400px] bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col justify-center items-center px-4 relative overflow-hidden transition-colors duration-200">
+      {/* Background subtle gradients */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-sky-500/10 dark:bg-sky-500/5 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute bottom-10 right-10 w-[400px] h-[400px] bg-indigo-500/10 dark:bg-indigo-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
-      <div className="w-full max-w-md bg-slate-900/90 border border-slate-800 p-8 rounded-3xl shadow-2xl backdrop-blur relative z-10">
+      {/* Theme toggle corner */}
+      <div className="absolute top-6 right-6 z-20">
+        <button
+          onClick={toggleTheme}
+          className="p-2.5 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 shadow-sm transition-colors"
+          title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+        >
+          {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-indigo-600" />}
+        </button>
+      </div>
+
+      <div className="w-full max-w-md bg-white/90 dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 p-8 rounded-3xl shadow-xl backdrop-blur-md relative z-10 transition-colors">
+        {/* Brand Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 shadow-xl shadow-sky-500/25 mb-4 text-3xl">
-            🎙️
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 shadow-xl shadow-sky-500/25 mb-4 text-white">
+            <Radio className="w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-extrabold text-slate-100 tracking-tight">
+          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight">
             RecordingBot
           </h1>
-          <p className="text-slate-400 text-sm mt-1">
+          <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-1.5 font-medium">
             Grabación, Transcripción y Minutas Automáticas
           </p>
         </div>
 
         {error && (
-          <div className="mb-6 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-start gap-3">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
+          <div className="mb-6 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-300 text-xs flex items-start gap-3">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500 mt-0.5" />
             <div>
               <p className="font-semibold">Error al iniciar sesión</p>
-              <p className="text-rose-400/90 mt-0.5">{error}</p>
+              <p className="text-rose-500/90 dark:text-rose-400/90 mt-0.5">{error}</p>
             </div>
           </div>
         )}
@@ -47,9 +61,9 @@ export const LoginPage: React.FC = () => {
         <div className="space-y-4">
           <button
             onClick={loginWithGoogle}
-            className="w-full flex items-center justify-center gap-3 bg-white hover:bg-slate-100 text-slate-900 font-semibold py-3.5 px-4 rounded-2xl transition-all shadow-lg shadow-white/5 active:scale-[0.98] text-sm"
+            className="w-full flex items-center justify-center gap-3 bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-semibold py-3.5 px-4 rounded-2xl transition-all shadow-md active:scale-[0.98] text-sm"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
               <path
                 fill="#4285F4"
                 d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -69,24 +83,30 @@ export const LoginPage: React.FC = () => {
             </svg>
             <span>Iniciar sesión con Google Workspace</span>
           </button>
-          
-          <p className="text-center text-[11px] text-slate-500">
-            Acceso restringido a cuentas autorizadas de Clever Cloud.
+
+          <p className="text-center text-[11px] text-slate-500 dark:text-slate-400">
+            Acceso multi-cuenta con Google Drive y Calendar sincronizado.
           </p>
         </div>
 
-        <div className="mt-8 pt-6 border-t border-slate-800/80 space-y-2.5 text-xs text-slate-400">
-          <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+        <div className="mt-8 pt-6 border-t border-slate-200/80 dark:border-slate-800/80 space-y-3 text-xs text-slate-600 dark:text-slate-400">
+          <div className="flex items-center gap-3">
+            <div className="p-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <Calendar className="w-3.5 h-3.5" />
+            </div>
             <span>Sincronización automática de Google Calendar</span>
           </div>
-          <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <div className="flex items-center gap-3">
+            <div className="p-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <HardDrive className="w-3.5 h-3.5" />
+            </div>
             <span>Subida directa a tu Google Drive personal</span>
           </div>
-          <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>Transcripciones automáticas con IA</span>
+          <div className="flex items-center gap-3">
+            <div className="p-1 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <Cpu className="w-3.5 h-3.5" />
+            </div>
+            <span>Transcripciones automáticas con IA y resumen</span>
           </div>
         </div>
       </div>

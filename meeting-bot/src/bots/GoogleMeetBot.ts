@@ -27,7 +27,7 @@ export class GoogleMeetBot extends MeetBotBase {
     this._correlationId = correlationId;
   }
 
-  async join({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, uploader }: JoinParams): Promise<void> {
+  async join({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, uploader, recordingMode, meetingTitle }: JoinParams): Promise<void> {
     const _state: BotStatus[] = ['processing'];
 
     const handleUpload = async () => {
@@ -39,7 +39,7 @@ export class GoogleMeetBot extends MeetBotBase {
 
     try {
       const pushState = (st: BotStatus) => _state.push(st);
-      await this.joinMeeting({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, uploader, pushState });
+      await this.joinMeeting({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, uploader, pushState, recordingMode, meetingTitle });
 
       // Finish the upload from the temp video
       const uploadResult = await handleUpload();
@@ -58,16 +58,12 @@ export class GoogleMeetBot extends MeetBotBase {
       
       if (error instanceof WaitingAtLobbyRetryError) {
         await handleWaitingAtLobbyError({ token: bearerToken, botId, eventId, provider: 'google', error }, this._logger);
-      }
-
-      if (error instanceof UnsupportedMeetingError) {
+      } else if (error instanceof UnsupportedMeetingError) {
         await handleUnsupportedMeetingError({ token: bearerToken, botId, eventId, provider: 'google', error }, this._logger);
       }
 
       throw error;
     } finally {
-      // Guarantee chrome subprocess tree is reaped regardless of exit path.
-      // No-op if a deeper code path already closed the browser.
       try {
         const context = this.page?.context();
         const browser = context?.browser();
@@ -87,7 +83,7 @@ export class GoogleMeetBot extends MeetBotBase {
     }
   }
 
-  private async joinMeeting({ url, name, teamId, userId, eventId, botId, pushState, uploader }: JoinParams & { pushState(state: BotStatus): void }): Promise<void> {
+  private async joinMeeting({ url, name, teamId, userId, eventId, botId, pushState, uploader, recordingMode, meetingTitle }: JoinParams & { pushState(state: BotStatus): void }): Promise<void> {
     this._logger.info('Launching browser...');
 
     this.page = await createBrowserContext(url, this._correlationId, 'google');
@@ -656,8 +652,8 @@ export class GoogleMeetBot extends MeetBotBase {
     }
 
     // Recording the meeting page
-    this._logger.info('Begin recording...');
-    await this.recordMeetingPage({ teamId, eventId, userId, botId, botName: name, uploader });
+    this._logger.info('Begin recording...', { recordingMode });
+    await this.recordMeetingPage({ teamId, eventId, userId, botId, botName: name, uploader, recordingMode, meetingTitle });
 
     pushState('finished');
   }
@@ -746,15 +742,16 @@ export class GoogleMeetBot extends MeetBotBase {
   }
 
   private async recordMeetingPage(
-    { teamId, userId, eventId, botId, botName, uploader }: 
-    { teamId: string, userId: string, eventId?: string, botId?: string, botName?: string, uploader: IUploader }
+    { teamId, userId, eventId, botId, botName, uploader, recordingMode, meetingTitle }: 
+    { teamId: string, userId: string, eventId?: string, botId?: string, botName?: string, uploader: IUploader, recordingMode?: string, meetingTitle?: string }
   ): Promise<void> {
     const duration = config.maxRecordingDuration * 60 * 1000;
     const inactivityLimit = config.inactivityLimit * 60 * 1000;
     const loneParticipantExitDelayMs = config.loneParticipantExitDelaySeconds * 1000;
+    const isAudioOnly = recordingMode === 'audio';
 
-    // Start Closed Captions extractor
-    const captionTask = new CaptionTask(this.page, this._logger, this.slightlySecretId);
+    // Start Closed Captions extractor with meeting title for formatted headers
+    const captionTask = new CaptionTask(this.page, this._logger, this.slightlySecretId, meetingTitle);
     try {
       await captionTask.start();
     } catch (captionErr) {
@@ -793,12 +790,12 @@ export class GoogleMeetBot extends MeetBotBase {
       }
     });
 
-    const { mimeTypes } = getRecordingMimeTypesForExtension(config.uploaderFileExtension);
+    const { mimeTypes } = getRecordingMimeTypesForExtension(config.uploaderFileExtension, isAudioOnly);
 
     // Inject the MediaRecorder code into the browser context using page.evaluate
     await this.page.evaluate(
-      async ({ teamId, duration, inactivityLimit, loneParticipantExitDelayMs, userId, slightlySecretId, activateInactivityDetectionAfter, activateInactivityDetectionAfterMinutes, mimeTypes }:
-      { teamId:string, userId: string, duration: number, inactivityLimit: number, loneParticipantExitDelayMs: number, slightlySecretId: string, activateInactivityDetectionAfter: string, activateInactivityDetectionAfterMinutes: number, mimeTypes: string[] }) => {
+      async ({ teamId, duration, inactivityLimit, loneParticipantExitDelayMs, userId, slightlySecretId, activateInactivityDetectionAfter, activateInactivityDetectionAfterMinutes, mimeTypes, recordingMode }:
+      { teamId:string, userId: string, duration: number, inactivityLimit: number, loneParticipantExitDelayMs: number, slightlySecretId: string, activateInactivityDetectionAfter: string, activateInactivityDetectionAfterMinutes: number, mimeTypes: string[], recordingMode?: string }) => {
         let timeoutId: NodeJS.Timeout;
         let inactivitySilenceDetectionTimeout: NodeJS.Timeout;
         let isOnValidGoogleMeetPageInterval: NodeJS.Timeout;
@@ -819,63 +816,77 @@ export class GoogleMeetBot extends MeetBotBase {
         async function startRecording() {
           console.log('Participant detection is active immediately; silence detection activates after', activateInactivityDetectionAfter);
 
-          // Check for the availability of the mediaDevices API
-          if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-            console.error('MediaDevices or getDisplayMedia not supported in this browser.');
-            return;
-          }
-          
-          const stream: MediaStream = await (navigator.mediaDevices as any).getDisplayMedia({
-            video: true,
-            audio: {
-              autoGainControl: false,
-              channels: 2,
-              channelCount: 2,
-              echoCancellation: false,
-              noiseSuppression: false,
-            },
-            preferCurrentTab: true,
-          });
+          const isTranscriptOnlyMode = recordingMode === 'transcript_only';
+          const isAudioOnlyMode = recordingMode === 'audio';
 
-          // Check if we actually got audio tracks
-          const audioTracks = stream.getAudioTracks();
-          const hasAudioTracks = audioTracks.length > 0;
-          
-          if (!hasAudioTracks) {
-            console.warn('No audio tracks available for silence detection. Will rely only on presence detection.');
-          }
-
-          const selectedMimeType = mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
-          if (!selectedMimeType) {
-            throw new Error(`MediaRecorder does not support requested codecs: ${mimeTypes.join(', ')}`);
-          }
-
-          console.log(`Media Recorder will use ${selectedMimeType} codecs...`);
-          const mediaRecorder = new MediaRecorder(stream, { mimeType: selectedMimeType });
-          console.log(`Media Recorder actual mime type: ${mediaRecorder.mimeType}`);
           let chunkUploadChain: Promise<void> = Promise.resolve();
           let isStoppingRecording = false;
+          let stream: MediaStream | null = null;
+          let mediaRecorder: MediaRecorder | null = null;
+          let hasAudioTracks = false;
 
-          mediaRecorder.ondataavailable = (event: BlobEvent) => {
-            if (!event.data.size) {
-              console.warn('Received empty chunk...');
+          if (!isTranscriptOnlyMode) {
+            // Check for the availability of the mediaDevices API
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+              console.error('MediaDevices or getDisplayMedia not supported in this browser.');
               return;
             }
-
-            const chunk = event.data;
-            chunkUploadChain = chunkUploadChain.then(async () => {
-              try {
-                const arrayBuffer = await chunk.arrayBuffer();
-                await sendChunkToServer(arrayBuffer);
-              } catch (error) {
-                console.error('Error uploading chunk:', error);
-              }
+            
+            stream = await (navigator.mediaDevices as any).getDisplayMedia({
+              video: true,
+              audio: {
+                autoGainControl: false,
+                channels: 2,
+                channelCount: 2,
+                echoCancellation: false,
+                noiseSuppression: false,
+              },
+              preferCurrentTab: true,
             });
-          };
 
-          // Start recording with 2-second intervals
-          const chunkDuration = 2000;
-          mediaRecorder.start(chunkDuration);
+            // Check if we actually got audio tracks
+            const audioTracks = stream.getAudioTracks();
+            hasAudioTracks = audioTracks.length > 0;
+            
+            if (!hasAudioTracks) {
+              console.warn('No audio tracks available for silence detection. Will rely only on presence detection.');
+            }
+
+            const streamToRecord = isAudioOnlyMode && hasAudioTracks ? new MediaStream(audioTracks) : stream;
+
+            const selectedMimeType = mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
+            if (!selectedMimeType) {
+              throw new Error(`MediaRecorder does not support requested codecs: ${mimeTypes.join(', ')}`);
+            }
+
+            console.log(`Media Recorder will use ${selectedMimeType} codecs (Mode: ${recordingMode})...`);
+            mediaRecorder = new MediaRecorder(streamToRecord, { mimeType: selectedMimeType });
+            console.log(`Media Recorder actual mime type: ${mediaRecorder.mimeType}`);
+
+            mediaRecorder.ondataavailable = (event: BlobEvent) => {
+              if (!event.data.size) {
+                console.warn('Received empty chunk...');
+                return;
+              }
+
+              const chunk = event.data;
+              chunkUploadChain = chunkUploadChain.then(async () => {
+                try {
+                  const arrayBuffer = await chunk.arrayBuffer();
+                  await sendChunkToServer(arrayBuffer);
+                } catch (error) {
+                  console.error('Error uploading chunk:', error);
+                }
+              });
+            };
+
+            // Start recording with 2-second intervals
+            const chunkDuration = 2000;
+            mediaRecorder.start(chunkDuration);
+          } else {
+            console.log('[MeetBot]: Transcript-only mode: MediaRecorder not started.');
+          }
+
           const recordingStartedAt = Date.now();
           const initialAloneGraceMs = activateInactivityDetectionAfterMinutes * 60 * 1000;
 
@@ -888,19 +899,23 @@ export class GoogleMeetBot extends MeetBotBase {
             const recordedDurationSeconds = Math.max(1, Math.round((Date.now() - recordingStartedAt) / 1000));
 
             try {
-              await new Promise<void>((resolve) => {
-                if (mediaRecorder.state === 'inactive') {
-                  resolve();
-                  return;
-                }
-                mediaRecorder.addEventListener('stop', () => resolve(), { once: true });
-                mediaRecorder.stop();
-              });
-              await chunkUploadChain;
+              if (mediaRecorder) {
+                await new Promise<void>((resolve) => {
+                  if (mediaRecorder!.state === 'inactive') {
+                    resolve();
+                    return;
+                  }
+                  mediaRecorder!.addEventListener('stop', () => resolve(), { once: true });
+                  mediaRecorder!.stop();
+                });
+                await chunkUploadChain;
+              }
             } catch (error) {
               console.error('Error stopping recorder or flushing final chunks:', error);
             } finally {
-              stream.getTracks().forEach((track) => track.stop());
+              if (stream) {
+                stream.getTracks().forEach((track) => track.stop());
+              }
 
               // Cleanup recording timer
               clearTimeout(timeoutId);
@@ -1149,8 +1164,8 @@ export class GoogleMeetBot extends MeetBotBase {
           }
 
           const detectIncrediblySilentMeeting = () => {
-            // Only run silence detection if we have audio tracks
-            if (!hasAudioTracks) {
+            // Only run silence detection if we have audio tracks and an active stream
+            if (!hasAudioTracks || !stream) {
               console.warn('Skipping silence detection - no audio tracks available. This may be due to browser permissions or Google Meet audio sharing settings.');
               console.warn('Meeting will rely on presence detection and max duration timeout.');
               return;

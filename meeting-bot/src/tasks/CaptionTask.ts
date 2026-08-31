@@ -9,11 +9,11 @@ export class CaptionTask {
   private formatter: TranscriptFormatter;
   private isCapturing = false;
 
-  constructor(page: Page, logger: Logger, secretId: string) {
+  constructor(page: Page, logger: Logger, secretId: string, meetingTitle?: string) {
     this.page = page;
     this.logger = logger;
     this.secretId = secretId;
-    this.formatter = new TranscriptFormatter();
+    this.formatter = new TranscriptFormatter(meetingTitle);
   }
 
   async start(): Promise<void> {

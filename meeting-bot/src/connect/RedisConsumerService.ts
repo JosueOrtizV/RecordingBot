@@ -156,7 +156,8 @@ export class RedisConsumerService {
           meetingParams.url,
           meetingParams.userTokens,
           meetingParams.driveFolderName,
-          meetingParams.dedupGroupId
+          meetingParams.dedupGroupId,
+          meetingParams.recordingMode
         );
 
         // Create and join the meeting
@@ -169,7 +170,9 @@ export class RedisConsumerService {
           userId: meetingParams.userId,
           eventId: meetingParams.eventId,
           botId: meetingParams.botId,
-          uploader
+          uploader,
+          recordingMode: meetingParams.recordingMode,
+          meetingTitle: meetingParams.meetingTitle,
         };
 
         switch (meetingParams.provider) {

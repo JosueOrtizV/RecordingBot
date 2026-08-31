@@ -101,9 +101,11 @@ export class GoogleDriveStorageProvider implements StorageProvider {
   async uploadFile(options: UploadOptions): Promise<boolean> {
     const { filePath, key, contentType, logger, metadata } = options;
 
-    logger.info(`GoogleDriveStorageProvider: uploading ${filePath} (key: ${key})...`);
+    logger.info(`GoogleDriveStorageProvider: uploading ${filePath} (key: ${key}, mode: ${metadata?.recordingMode || 'default'})...`);
 
-    if (!fs.existsSync(filePath)) {
+    const isTranscriptOnly = metadata?.recordingMode === 'transcript_only' || !fs.existsSync(filePath);
+
+    if (!isTranscriptOnly && !fs.existsSync(filePath)) {
       throw new Error(`File does not exist at path: ${filePath}`);
     }
 
@@ -119,43 +121,53 @@ export class GoogleDriveStorageProvider implements StorageProvider {
     const dateFolderId = await this.getOrCreateFolder(today, rootId, drive);
 
     const fileName = path.basename(key) || path.basename(filePath);
-
-    // 2.5. Fix webm metadata using ffmpeg if it's a webm file
     let finalFilePath = filePath;
-    if (filePath.endsWith('.webm') || contentType.includes('webm')) {
-      logger.info(`GoogleDriveStorageProvider: Fixing webm metadata for ${filePath} using ffmpeg...`);
-      const fixedFilePath = `${filePath}.fixed.webm`;
-      try {
-        const { execSync } = require('child_process');
-        execSync(`ffmpeg -y -i "${filePath}" -c copy "${fixedFilePath}"`, { stdio: 'ignore' });
-        if (fs.existsSync(fixedFilePath)) {
-          finalFilePath = fixedFilePath;
-          logger.info(`GoogleDriveStorageProvider: Successfully fixed webm metadata.`);
+
+    if (!isTranscriptOnly) {
+      // 2.5. Fix webm metadata using ffmpeg if it's a webm file
+      if (filePath.endsWith('.webm') || contentType.includes('webm')) {
+        logger.info(`GoogleDriveStorageProvider: Fixing webm metadata for ${filePath} using ffmpeg...`);
+        const fixedFilePath = `${filePath}.fixed.webm`;
+        try {
+          const { execSync } = require('child_process');
+          execSync(`ffmpeg -y -i "${filePath}" -c copy "${fixedFilePath}"`, { stdio: 'ignore' });
+          if (fs.existsSync(fixedFilePath)) {
+            finalFilePath = fixedFilePath;
+            logger.info(`GoogleDriveStorageProvider: Successfully fixed webm metadata.`);
+          }
+        } catch (err) {
+          logger.warn(`GoogleDriveStorageProvider: ffmpeg failed to fix webm, falling back to original:`, err);
         }
-      } catch (err) {
-        logger.warn(`GoogleDriveStorageProvider: ffmpeg failed to fix webm, falling back to original:`, err);
       }
+
+      // Determine correct mime type for Google Drive upload
+      let uploadMimeType = contentType;
+      if (filePath.endsWith('.mp3') || contentType.includes('mp3') || contentType.includes('audio/mpeg')) {
+        uploadMimeType = 'audio/mpeg';
+      } else if (filePath.endsWith('.mp4') || contentType.includes('mp4')) {
+        uploadMimeType = 'video/mp4';
+      }
+
+      // 3. Upload main file (video/mp4, audio/mp3, or video/webm)
+      const fileMetadata: drive_v3.Schema$File = {
+        name: fileName,
+        parents: [dateFolderId],
+      };
+
+      const media = {
+        mimeType: uploadMimeType,
+        body: fs.createReadStream(finalFilePath),
+      };
+
+      const response = await drive.files.create({
+        requestBody: fileMetadata,
+        media: media,
+        fields: 'id, name, webViewLink, webContentLink',
+      });
+
+      this.lastUploadedWebLink = response.data.webViewLink || null;
+      logger.info(`GoogleDriveStorageProvider: Main file uploaded successfully! ID: ${response.data.id}, Link: ${response.data.webViewLink}`);
     }
-
-    // 3. Upload main file (video/webm or mp4)
-    const fileMetadata: drive_v3.Schema$File = {
-      name: fileName,
-      parents: [dateFolderId],
-    };
-
-    const media = {
-      mimeType: contentType,
-      body: fs.createReadStream(finalFilePath),
-    };
-
-    const response = await drive.files.create({
-      requestBody: fileMetadata,
-      media: media,
-      fields: 'id, name, webViewLink, webContentLink',
-    });
-
-    this.lastUploadedWebLink = response.data.webViewLink || null;
-    logger.info(`GoogleDriveStorageProvider: Main file uploaded successfully! ID: ${response.data.id}, Link: ${response.data.webViewLink}`);
 
     // 4. Check if transcript exists or if we should run Whisper AI fallback
     const dir = path.dirname(filePath);
@@ -176,8 +188,8 @@ export class GoogleDriveStorageProvider implements StorageProvider {
       }
     }
 
-    // Fallback: If CC scraping yielded no transcript, invoke local Whisper AI
-    if (!hasValidTranscript) {
+    // Fallback: If CC scraping yielded no transcript and we have a media file, invoke local Whisper AI
+    if (!hasValidTranscript && !isTranscriptOnly && fs.existsSync(finalFilePath)) {
       logger.info(`GoogleDriveStorageProvider: Transcript missing or empty. Attempting Whisper AI fallback...`);
       const possiblePythonBins = [
         '/app/whisper-env/bin/python',
@@ -229,7 +241,10 @@ export class GoogleDriveStorageProvider implements StorageProvider {
           media: transcriptMedia,
           fields: 'id, name, webViewLink',
         });
-        logger.info(`GoogleDriveStorageProvider: Transcript uploaded successfully! ID: ${tRes.data.id}`);
+        logger.info(`GoogleDriveStorageProvider: Transcript uploaded successfully! ID: ${tRes.data.id}, Link: ${tRes.data.webViewLink}`);
+        if (isTranscriptOnly) {
+          this.lastUploadedWebLink = tRes.data.webViewLink || null;
+        }
       } catch (tErr) {
         logger.warn('GoogleDriveStorageProvider: Could not upload transcript .txt:', tErr);
       }
