@@ -53,17 +53,21 @@ router.get('/google/callback', async (req: Request, res: Response) => {
       return;
     }
 
+    const userName = profile.name || email.split('@')[0];
+    const defaultBotName = `${userName}'s Notetaker`;
+
     // Insert or update user
     const userRes = await query(
-      `INSERT INTO users (email, name, picture_url, google_tokens, updated_at)
-       VALUES ($1, $2, $3, $4, NOW())
+      `INSERT INTO users (email, name, picture_url, google_tokens, bot_display_name, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
        ON CONFLICT (email) DO UPDATE SET
          name = EXCLUDED.name,
          picture_url = EXCLUDED.picture_url,
          google_tokens = EXCLUDED.google_tokens,
+         bot_display_name = COALESCE(users.bot_display_name, EXCLUDED.bot_display_name),
          updated_at = NOW()
        RETURNING id, email, name, picture_url, bot_display_name`,
-      [email, profile.name || email, profile.picture || null, JSON.stringify(tokens)]
+      [email, userName, profile.picture || null, JSON.stringify(tokens), defaultBotName]
     );
 
     const user = userRes.rows[0];

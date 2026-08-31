@@ -1,7 +1,7 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../api/client';
 import { WorkerStatus } from '../types';
-import { Radio, Loader2, User, Cpu } from 'lucide-react';
+import { Radio, Loader2, User, Video, Mic, FileText } from 'lucide-react';
 
 export const ActiveRecordingsBanner: React.FC = () => {
   const [status, setStatus] = useState<WorkerStatus | null>(null);
@@ -35,7 +35,7 @@ export const ActiveRecordingsBanner: React.FC = () => {
     <div className="mb-6 space-y-3">
       {hasActive && (
         <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-rose-500/10 via-indigo-500/10 to-sky-500/10 border border-rose-500/30 dark:border-rose-500/20 shadow-lg shadow-rose-500/5">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between gap-2 mb-3">
             <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 font-bold text-sm">
               <span className="relative flex h-3 w-3">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
@@ -44,9 +44,10 @@ export const ActiveRecordingsBanner: React.FC = () => {
               <Radio className="w-4 h-4" />
               <span>Grabación en Vivo ({status.activeRecordings.length})</span>
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-medium">
-              <Cpu className="w-3.5 h-3.5" />
-              <span>Workers: {status.workers.active} / {status.workers.total}</span>
+
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>Bot Activo</span>
             </div>
           </div>
 
@@ -54,18 +55,35 @@ export const ActiveRecordingsBanner: React.FC = () => {
             {status.activeRecordings.map((rec) => (
               <div
                 key={rec.id}
-                className="bg-white/90 dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 p-3 rounded-2xl flex items-center justify-between text-xs shadow-sm"
+                className="bg-white/95 dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 p-3 rounded-2xl flex items-center justify-between text-xs shadow-sm"
               >
                 <div className="truncate mr-2">
                   <p className="font-semibold text-slate-800 dark:text-slate-200 truncate">
                     {rec.meeting_title || 'Reunión en Curso'}
                   </p>
-                  <p className="text-slate-500 dark:text-slate-400 text-[11px] flex items-center gap-1 mt-0.5 truncate">
+                  <div className="text-slate-500 dark:text-slate-400 text-[11px] flex items-center gap-1.5 mt-0.5 truncate">
                     <User className="w-3 h-3 text-slate-400" />
                     <span>{rec.user_name}</span>
                     <span>•</span>
-                    <span className="capitalize">{rec.recording_mode}</span>
-                  </p>
+                    <span className="inline-flex items-center gap-1 font-medium capitalize">
+                      {rec.recording_mode === 'video' ? (
+                        <>
+                          <Video className="w-3 h-3 text-sky-500" />
+                          <span>Video</span>
+                        </>
+                      ) : rec.recording_mode === 'audio' ? (
+                        <>
+                          <Mic className="w-3 h-3 text-emerald-500" />
+                          <span>Audio</span>
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="w-3 h-3 text-indigo-500" />
+                          <span>Texto</span>
+                        </>
+                      )}
+                    </span>
+                  </div>
                 </div>
                 <span className="px-2.5 py-1 rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-mono text-[10px] font-bold shrink-0 animate-pulse">
                   GRABANDO

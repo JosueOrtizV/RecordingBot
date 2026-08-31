@@ -65,6 +65,17 @@ export interface WorkerStatus {
     active: number;
     idle: number;
   };
+  capacity?: {
+    loadPercentage: number;
+    videoCount: number;
+    audioCount: number;
+    textCount: number;
+    maxVideo: number;
+    maxAudio: number;
+    availableVideoSlots: number;
+    availableAudioSlots: number;
+    statusLabel: string;
+  };
   queue: {
     pending: number;
     processing: number;
@@ -78,3 +89,17 @@ export interface WorkerStatus {
     user_name: string;
   }>;
 }
+
+export interface RecordingStats {
+  totalCount: number;
+  totalSeconds: number;
+  completedCount: number;
+  withTranscriptCount: number;
+  countsByRange: {
+    today: number;
+    week: number;
+    month: number;
+    all: number;
+  };
+}
+

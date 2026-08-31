@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { fetchApi } from '../api/client';
-import { Video, Mic, FileText, Send, CheckCircle2, AlertCircle, Loader2, Radio, Zap, HardDrive } from 'lucide-react';
+import { Video, Mic, FileText, Send, CheckCircle2, AlertCircle, Loader2, Zap, HardDrive } from 'lucide-react';
 import { WorkerStatus } from '../types';
 
 export const JoinMeetingPage: React.FC = () => {
@@ -260,21 +260,32 @@ export const JoinMeetingPage: React.FC = () => {
         <div className="space-y-4">
           <div className="bg-white dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800 p-6 rounded-3xl shadow-sm space-y-4 transition-colors">
             <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm flex items-center gap-2">
-              <Radio className="w-4 h-4 text-sky-500" />
-              Estado de los Workers
+              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+              Disponibilidad del Bot
             </h3>
 
-            <div className="space-y-2.5 text-xs">
+            <div className="space-y-2 text-xs">
+              {/* Bot status */}
               <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800">
-                <span className="text-slate-500 dark:text-slate-400">Workers Disponibles:</span>
-                <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                  {workerStatus ? `${workerStatus.workers.idle} / ${workerStatus.workers.total}` : '...'}
+                <span className="text-slate-600 dark:text-slate-400 font-medium">Estado del Servicio:</span>
+                <span className="inline-flex items-center gap-1.5 font-bold text-emerald-600 dark:text-emerald-400">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>Disponible</span>
                 </span>
               </div>
 
+              {/* Supported Modes */}
               <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800">
-                <span className="text-slate-500 dark:text-slate-400">Reuniones en Cola:</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200">
+                <span className="text-slate-600 dark:text-slate-400 font-medium">Módulos Activos:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                  Video, Audio y Minutas
+                </span>
+              </div>
+
+              {/* Queue */}
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800">
+                <span className="text-slate-600 dark:text-slate-400 font-medium">Reuniones en Espera:</span>
+                <span className="font-bold font-mono text-slate-800 dark:text-slate-200">
                   {workerStatus ? workerStatus.queue.pending : '0'}
                 </span>
               </div>

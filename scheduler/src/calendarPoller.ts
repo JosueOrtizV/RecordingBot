@@ -221,7 +221,7 @@ export async function pollCalendar(): Promise<void> {
       startTime: primary.startTime,
       eventId: primary.eventId,
       userId: primary.user.id,
-      botName: primary.user.bot_display_name || config.botDisplayName,
+      botName: primary.user.bot_display_name || (primary.user.name ? `${primary.user.name}'s Notetaker` : config.botDisplayName),
       recordingMode: selectedMode,
       userTokens: primary.user.google_tokens,
       driveFolderName: primary.user.drive_folder_name || 'RecordingBot',
@@ -239,15 +239,16 @@ export async function pollCalendar(): Promise<void> {
           [dedupGroupId || null, selectedMode, item.user.id, item.eventId]
         );
 
-        // Pre-create recording entry in DB
+        // Pre-create recording entry in DB (use botId for primary user to guarantee exact match on completion)
+        const recordId = item.user.id === primary.user.id ? botId : uuidv4();
         await query(
           `INSERT INTO recordings (
              id, user_id, owner_user_id, meeting_title, meeting_url,
              calendar_event_id, recording_mode, status, dedup_group_id, started_at
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, NOW())
-           ON CONFLICT DO NOTHING`,
-          [uuidv4(), item.user.id, primary.user.id, item.title, meetUrl, item.eventId, selectedMode, dedupGroupId || null]
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'recording', $8, NOW())
+           ON CONFLICT (id) DO UPDATE SET status = 'recording'`,
+          [recordId, item.user.id, primary.user.id, item.title, meetUrl, item.eventId, selectedMode, dedupGroupId || null]
         );
       } catch (dbErr) {
         logger.warn('Failed to record dispatched meeting in DB:', dbErr);

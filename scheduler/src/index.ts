@@ -88,20 +88,31 @@ async function startNotificationListener() {
         }
 
         // Lookup user's telegram_chat_id
+        const userId = data.metadata?.userId;
         let userChatId: string | null = null;
         try {
-          const chatRes = await query(
-            `SELECT s.telegram_chat_id
-             FROM recordings r
-             JOIN user_settings s ON s.user_id = r.user_id
-             WHERE (r.id::text = $1 OR r.calendar_event_id = $1 OR r.dedup_group_id::text = $2)
-               AND s.telegram_chat_id IS NOT NULL AND s.telegram_chat_id != ''
-             LIMIT 1`,
-            [recordingId || '', dedupGroupId || '']
-          );
-          userChatId = chatRes.rows[0]?.telegram_chat_id || null;
+          if (userId) {
+            const userRes = await query(
+              `SELECT telegram_chat_id FROM user_settings WHERE user_id = $1 AND telegram_chat_id IS NOT NULL AND telegram_chat_id != ''`,
+              [userId]
+            );
+            userChatId = userRes.rows[0]?.telegram_chat_id || null;
+          }
+
+          if (!userChatId) {
+            const chatRes = await query(
+              `SELECT s.telegram_chat_id
+               FROM recordings r
+               JOIN user_settings s ON s.user_id = r.user_id
+               WHERE (r.id::text = $1 OR r.calendar_event_id = $1 OR r.id::text = $2 OR r.calendar_event_id = $2 OR r.dedup_group_id::text = $3)
+                 AND s.telegram_chat_id IS NOT NULL AND s.telegram_chat_id != ''
+               LIMIT 1`,
+              [recordingId || '', botId || eventId || '', dedupGroupId || '']
+            );
+            userChatId = chatRes.rows[0]?.telegram_chat_id || null;
+          }
         } catch (e) {
-          // Ignore
+          logger.warn('Failed to lookup telegram_chat_id:', e);
         }
 
         if (userChatId) {
@@ -175,20 +186,31 @@ async function startNotificationListener() {
         }
 
         // Lookup user's telegram_chat_id
+        const userId = data.metadata?.userId;
         let userChatId: string | null = null;
         try {
-          const chatRes = await query(
-            `SELECT s.telegram_chat_id
-             FROM recordings r
-             JOIN user_settings s ON s.user_id = r.user_id
-             WHERE (r.id::text = $1 OR r.calendar_event_id = $1 OR r.dedup_group_id::text = $2)
-               AND s.telegram_chat_id IS NOT NULL AND s.telegram_chat_id != ''
-             LIMIT 1`,
-            [recordingId || botId || eventId || '', dedupGroupId || '']
-          );
-          userChatId = chatRes.rows[0]?.telegram_chat_id || null;
+          if (userId) {
+            const userRes = await query(
+              `SELECT telegram_chat_id FROM user_settings WHERE user_id = $1 AND telegram_chat_id IS NOT NULL AND telegram_chat_id != ''`,
+              [userId]
+            );
+            userChatId = userRes.rows[0]?.telegram_chat_id || null;
+          }
+
+          if (!userChatId) {
+            const chatRes = await query(
+              `SELECT s.telegram_chat_id
+               FROM recordings r
+               JOIN user_settings s ON s.user_id = r.user_id
+               WHERE (r.id::text = $1 OR r.calendar_event_id = $1 OR r.id::text = $2 OR r.calendar_event_id = $2 OR r.dedup_group_id::text = $3)
+                 AND s.telegram_chat_id IS NOT NULL AND s.telegram_chat_id != ''
+               LIMIT 1`,
+              [recordingId || '', botId || eventId || '', dedupGroupId || '']
+            );
+            userChatId = chatRes.rows[0]?.telegram_chat_id || null;
+          }
         } catch (e) {
-          // Ignore
+          logger.warn('Failed to lookup telegram_chat_id on failure:', e);
         }
 
         if (userChatId) {

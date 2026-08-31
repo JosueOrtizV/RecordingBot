@@ -332,31 +332,43 @@ export class GoogleMeetBot extends MeetBotBase {
 
             const detectLobbyModeHostWaitingText = async (): Promise<'WAITING_FOR_HOST_TO_ADMIT_BOT' | 'WAITING_REQUEST_TIMEOUT' | 'LOBBY_MODE_NOT_ACTIVE' | 'UNABLE_TO_DETECT_LOBBY_MODE'> => {
               try {
-                const lobbyHostWaitingTexts = [
-                  GOOGLE_LOBBY_MODE_HOST_TEXT,
-                  'Bitte warten Sie, bis Sie vom Organisator',
-                ];
-                for (const text of lobbyHostWaitingTexts) {
-                  const lobbyModeHostWaitingText = await this.page.getByText(text);
-                  if (await lobbyModeHostWaitingText.count() > 0 && await lobbyModeHostWaitingText.first().isVisible()) {
-                    return 'WAITING_FOR_HOST_TO_ADMIT_BOT';
-                  }
+                // Check whole-page text for lobby indicators (case-insensitive)
+                const bodyText = (await this.page.evaluate(() => document.body.innerText).catch(() => ''))?.toLowerCase() || '';
+
+                const isWaitingForHost = 
+                  bodyText.includes('espera a que') ||
+                  bodyText.includes('anfitrión de la reunión te agregue') ||
+                  bodyText.includes('te agregue a la llamada') ||
+                  bodyText.includes('solicitando unirse') ||
+                  bodyText.includes('esperando a que te den acceso') ||
+                  bodyText.includes('esperando al anfitrión') ||
+                  bodyText.includes('please wait until a meeting host brings you') ||
+                  bodyText.includes('someone will let you in soon') ||
+                  bodyText.includes('someone let you into the meeting') ||
+                  bodyText.includes('asking to join') ||
+                  bodyText.includes('bitte warten sie, bis sie vom organisator') ||
+                  bodyText.includes('teilnahme erbitten');
+
+                if (isWaitingForHost) {
+                  return 'WAITING_FOR_HOST_TO_ADMIT_BOT';
                 }
 
-                const requestTimeoutTexts = [
-                  GOOGLE_REQUEST_TIMEOUT,
-                  'Niemand hat auf Ihre Teilnahmeanfrage geantwortet',
-                ];
-                for (const text of requestTimeoutTexts) {
-                  const lobbyModeRequestTimeoutText = await this.page.getByText(text);
-                  if (await lobbyModeRequestTimeoutText.count() > 0 && await lobbyModeRequestTimeoutText.first().isVisible()) {
-                    return 'WAITING_REQUEST_TIMEOUT';
-                  }
+                const isRequestTimedOut =
+                  bodyText.includes('nadie ha respondido a tu solicitud') ||
+                  bodyText.includes('no respondió a tu solicitud') ||
+                  bodyText.includes('solicitud para unirte expiró') ||
+                  bodyText.includes('no one replied to your request') ||
+                  bodyText.includes('request to join timed out') ||
+                  bodyText.includes('niemand hat auf ihre teilnahmeanfrage geantwortet') ||
+                  bodyText.includes(GOOGLE_REQUEST_TIMEOUT.toLowerCase());
+
+                if (isRequestTimedOut) {
+                  return 'WAITING_REQUEST_TIMEOUT';
                 }
 
                 return 'LOBBY_MODE_NOT_ACTIVE';
               }
-              catch (e) {
+              catch (e: any) {
                 this._logger.error('Error detecting lobby mode host waiting text...', { error: e, message: e?.message });
                 return 'UNABLE_TO_DETECT_LOBBY_MODE';
               }
@@ -367,28 +379,23 @@ export class GoogleMeetBot extends MeetBotBase {
             let botWasDeniedAccess = false;
 
             try {
-              peopleElement = await this.page.locator('button[aria-label^="People"], button[aria-label^="Personen"], button[aria-label^="Personas"]').first().isVisible({ timeout: 500 }).catch(() => false);
+              peopleElement = await this.page.locator('button[aria-label^="People" i], button[aria-label^="Personen" i], button[aria-label^="Personas" i], button[aria-label^="Participantes" i]').first().isVisible({ timeout: 500 }).catch(() => false);
             } catch(e) {
-              this._logger.error(
-                'wait error', { error: e }
-              );
-              //do nothing
+              // do nothing
             }
 
             try {
-              callButtonElement = await this.page.locator('button[aria-label="Leave call"], button[aria-label="Anruf verlassen"], button[aria-label="Abandonar la llamada"]').first().isVisible({ timeout: 500 }).catch(() => false);
+              callButtonElement = await this.page.locator('button[aria-label="Leave call" i], button[aria-label="Anruf verlassen" i], button[aria-label="Abandonar la llamada" i]').first().isVisible({ timeout: 500 }).catch(() => false);
             } catch(e) {
-              this._logger.error(
-                'wait error', { error: e }
-              );
-              //do nothing
+              // do nothing
             }
 
             if (peopleElement || callButtonElement) {
               // Here check the "lobby mode" that waits for the Host to join the meeting or for the Host to admit the bot
               const lobbyModeHostWaitingText = await detectLobbyModeHostWaitingText();
               if (lobbyModeHostWaitingText === 'WAITING_FOR_HOST_TO_ADMIT_BOT') {
-                this._logger.info('Lobbdy Mode: Google Meet Bot is waiting for the host to admit it...', { userId, teamId });
+                this._logger.info('Lobby Mode: Google Meet Bot is waiting for the host to admit it...', { userId, teamId });
+                return; // Keep waiting in lobby interval, do not start recording
               } else if (lobbyModeHostWaitingText === 'WAITING_REQUEST_TIMEOUT') {
                 this._logger.info('Lobby Mode: Google Meet Bot join request timed out...', { userId, teamId });
                 lobbyRequestTimedOut = true;
@@ -397,59 +404,56 @@ export class GoogleMeetBot extends MeetBotBase {
                 resolveWaiting(false);
                 return;
               } else {
-                // Additional check: Verify we can actually see participants (not just UI buttons)
-                // The "Leave call" button can exist even in lobby waiting state
+                // Verify we are ACTUALLY inside the active meeting and NOT in any waiting state
                 try {
                   const participantCountDetected = await this.page.evaluate(() => {
                     try {
-                      // Look for People button with participant count
-                      const peopleButton = document.querySelector('button[aria-label^="People"], button[aria-label^="Personen"], button[aria-label^="Personas"]');
-                      if (peopleButton) {
-                        const ariaLabel = peopleButton.getAttribute('aria-label');
-                        // Check if we can see participant count (e.g., "People - 2 joined")
-                        const match = ariaLabel?.match(/(?:People|Personen|Personas).*?(\d+)/);
-                        if (match && parseInt(match[1]) >= 1) {
+                      const bodyText = (document.body.innerText || '').toLowerCase();
+
+                      // STRICT LOBBY CHECK: If ANY waiting indicator is visible, we are definitely NOT in the call!
+                      const hasLobbyIndicator = 
+                        bodyText.includes('espera a que') ||
+                        bodyText.includes('anfitrión de la reunión te agregue') ||
+                        bodyText.includes('te agregue a la llamada') ||
+                        bodyText.includes('solicitando unirse') ||
+                        bodyText.includes('esperando a que te den acceso') ||
+                        bodyText.includes('esperando al anfitrión') ||
+                        bodyText.includes('please wait until a meeting host brings you') ||
+                        bodyText.includes('someone will let you in soon') ||
+                        bodyText.includes('someone let you into the meeting') ||
+                        bodyText.includes('asking to join') ||
+                        bodyText.includes('bitte warten sie') ||
+                        bodyText.includes('you\'re the only one here') ||
+                        bodyText.includes('you will join the call when');
+
+                      if (hasLobbyIndicator) {
+                        return false;
+                      }
+
+                      // 1. Look for People / Participantes button with participant count >= 1
+                      const peopleButtons = document.querySelectorAll('button[aria-label*="People" i], button[aria-label*="Personen" i], button[aria-label*="Personas" i], button[aria-label*="Participantes" i]');
+                      for (const btn of Array.from(peopleButtons)) {
+                        const ariaLabel = btn.getAttribute('aria-label') || '';
+                        const match = ariaLabel.match(/(?:People|Personen|Personas|Participantes).*?(\d+)/i);
+                        if (match && parseInt(match[1], 10) >= 1) {
                           return true;
                         }
                       }
 
-                      // Alternative: Check if participant count is visible in the DOM
-                      const allButtons = Array.from(document.querySelectorAll('button'));
-                      for (const btn of allButtons) {
-                        const label = btn.getAttribute('aria-label');
-                        if (label && /(?:People|Personen|Personas).*?\d+/.test(label)) {
-                          return true;
-                        }
-                      }
-
-                      // Fallback: Check for text that indicates we're in the call
-                      const bodyText = document.body.innerText;
-                      if (bodyText.includes('You have joined the call') ||
-                          bodyText.includes('other person in the call') ||
-                          bodyText.includes('people in the call') ||
-                          bodyText.includes('Du nimmst an diesem Anruf teil') ||
-                          bodyText.includes('Der Anruf hat einen weiteren Teilnehmer') ||
-                          bodyText.includes('Teilnehmer sind beigetreten') ||
-                          bodyText.includes('Se unieron participantes externos') ||
-                          bodyText.includes('Estás en la llamada') ||
-                          bodyText.includes('Detalles de la reunión')) {
+                      // 2. Look for active participant video tiles in the main meeting grid
+                      const activeTiles = document.querySelectorAll('div[data-participant-id], div[data-requested-participant-id], div[data-initial-participant-id]');
+                      if (activeTiles.length > 0) {
                         return true;
                       }
 
-                      // Fallback: Check for Leave call button which indicates we're in a call
-                      const leaveCallButton = document.querySelector('button[aria-label*="Leave call"], button[aria-label*="Anruf verlassen"], button[aria-label*="Abandonar la llamada"]');
-                      if (leaveCallButton) {
-                        // If we have Leave call button AND no lobby mode text, we're likely in the call
-                        const hasLobbyText = bodyText.includes('Asking to join') ||
-                                            bodyText.includes('You\'re the only one here') ||
-                                            bodyText.includes('Teilnahme erbitten') ||
-                                            bodyText.includes('Bitte warten Sie, bis Sie vom Organisator') ||
-                                            bodyText.includes('Solicitando unirse') ||
-                                            bodyText.includes('Espera a que') ||
-                                            bodyText.includes('You will join the call when');
-                        if (!hasLobbyText) {
-                          return true;
-                        }
+                      // 3. Look for explicit in-call notifications
+                      if (bodyText.includes('you have joined the call') ||
+                          bodyText.includes('estás en la llamada') ||
+                          bodyText.includes('du nimmst an diesem anruf teil') ||
+                          bodyText.includes('se unieron participantes externos') ||
+                          bodyText.includes('people in the call') ||
+                          bodyText.includes('personas en la llamada')) {
+                        return true;
                       }
 
                       return false;
@@ -465,7 +469,7 @@ export class GoogleMeetBot extends MeetBotBase {
                     resolveWaiting(true);
                     return;
                   } else {
-                    this._logger.info('People button found but participant count not visible yet - continuing to wait...', { userId, teamId });
+                    this._logger.info('Waiting for admission into Google Meet (host has not admitted yet)...', { userId, teamId });
                     return;
                   }
                 } catch (e) {

@@ -26,11 +26,13 @@ router.post('/join', requireAuth, async (req: Request, res: Response) => {
     }
 
     // Fetch user settings and tokens
-    const userRes = await query('SELECT google_tokens, bot_display_name FROM users WHERE id = $1', [user.id]);
+    const userRes = await query('SELECT name, google_tokens, bot_display_name FROM users WHERE id = $1', [user.id]);
     const settingsRes = await query('SELECT * FROM user_settings WHERE user_id = $1', [user.id]);
 
-    const googleTokens = userRes.rows[0]?.google_tokens;
-    const botDisplayName = userRes.rows[0]?.bot_display_name || config.botDisplayName;
+    const userRow = userRes.rows[0] || {};
+    const defaultBotName = userRow.name ? `${userRow.name}'s Notetaker` : config.botDisplayName;
+    const googleTokens = userRow.google_tokens;
+    const botDisplayName = userRow.bot_display_name || defaultBotName;
     const settings = settingsRes.rows[0] || {};
 
     const mode = recordingMode || (settings.enable_video ? 'video' : (settings.enable_audio ? 'audio' : 'transcript_only'));
@@ -82,27 +84,56 @@ router.post('/join', requireAuth, async (req: Request, res: Response) => {
 });
 
 // GET /api/bot/status
-router.get('/status', requireAuth, async (_req: Request, res: Response) => {
+router.get('/status', requireAuth, async (req: Request, res: Response) => {
   try {
+    const userId = req.user!.id;
     const stats = await getQueueStats();
 
-    // Check active recordings from DB
-    const activeRes = await query(
-      `SELECT r.id, r.meeting_title, r.meeting_url, r.recording_mode, r.started_at, u.name as user_name
+    // Check all active recordings from DB for global capacity calculation
+    const allActiveRes = await query(
+      `SELECT r.id, r.meeting_title, r.meeting_url, r.recording_mode, r.started_at, r.user_id, u.name as user_name
        FROM recordings r
        JOIN users u ON u.id = r.user_id
        WHERE r.status IN ('pending', 'recording')
        ORDER BY r.started_at DESC`
     );
 
+    const allActiveRows = allActiveRes.rows;
+    // Only return active recordings belonging to the current authenticated user (for privacy)
+    const userActiveRows = allActiveRows.filter((r) => r.user_id === userId);
+
+    const videoCount = allActiveRows.filter((r) => r.recording_mode === 'video').length;
+    const audioCount = allActiveRows.filter((r) => r.recording_mode === 'audio').length;
+    const textCount = allActiveRows.filter((r) => r.recording_mode === 'transcript_only').length;
+
+    // Load calculation (100 = full capacity)
+    const loadPercentage = Math.min(100, (videoCount * 45) + (audioCount * 15) + (textCount * 10));
+    const availableVideoSlots = Math.max(0, videoCount < 2 && loadPercentage <= 55 ? (2 - videoCount) : 0);
+    const availableAudioSlots = Math.max(0, Math.floor((100 - loadPercentage) / 15));
+
+    let statusLabel = 'Óptima';
+    if (loadPercentage >= 90) statusLabel = 'Capacidad Máxima';
+    else if (loadPercentage >= 50) statusLabel = 'Moderada';
+
     res.json({
       workers: {
         total: 2,
-        active: activeRes.rows.length,
-        idle: Math.max(0, 2 - activeRes.rows.length),
+        active: allActiveRows.length,
+        idle: Math.max(0, 2 - allActiveRows.length),
+      },
+      capacity: {
+        loadPercentage,
+        videoCount,
+        audioCount,
+        textCount,
+        maxVideo: 2,
+        maxAudio: 6,
+        availableVideoSlots,
+        availableAudioSlots,
+        statusLabel,
       },
       queue: stats,
-      activeRecordings: activeRes.rows,
+      activeRecordings: userActiveRows,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

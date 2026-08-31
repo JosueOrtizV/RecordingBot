@@ -10,9 +10,12 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
 
-    const userRes = await query('SELECT bot_display_name FROM users WHERE id = $1', [userId]);
+    const userRes = await query('SELECT name, bot_display_name FROM users WHERE id = $1', [userId]);
     const settingsRes = await query('SELECT * FROM user_settings WHERE user_id = $1', [userId]);
     let settings = settingsRes.rows[0] || {};
+
+    const userRow = userRes.rows[0] || {};
+    const defaultBotName = userRow.name ? `${userRow.name}'s Notetaker` : 'Notetaker';
 
     if (!settings.drive_folder_id) {
       try {
@@ -26,7 +29,7 @@ router.get('/', requireAuth, async (req: Request, res: Response) => {
     }
 
     res.json({
-      botDisplayName: userRes.rows[0]?.bot_display_name || 'Notetaker',
+      botDisplayName: userRow.bot_display_name || defaultBotName,
       settings,
     });
   } catch (err: any) {

@@ -145,11 +145,12 @@ export const SettingsPage: React.FC = () => {
                 type="text"
                 value={botDisplayName}
                 onChange={(e) => setBotDisplayName(e.target.value)}
+                placeholder="ej. Ing. Josué Ortiz's Notetaker"
                 className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-sky-500 transition-colors"
                 required
               />
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                El nombre con el que el bot aparecerá en la lista de participantes de Google Meet.
+                El nombre con el que el bot aparecerá en la lista de participantes de Google Meet (por defecto: Tu Nombre's Notetaker).
               </p>
             </div>
 
@@ -192,7 +193,7 @@ export const SettingsPage: React.FC = () => {
                     <Video className="w-4 h-4 text-sky-500" />
                     <span>Grabar Video</span>
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Captura WebM</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Captura MP4</p>
                 </div>
                 <div
                   className={`w-5 h-5 rounded-lg flex items-center justify-center transition-colors ${
@@ -217,7 +218,7 @@ export const SettingsPage: React.FC = () => {
                     <Mic className="w-4 h-4 text-emerald-500" />
                     <span>Grabar Audio</span>
                   </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Audio nítido</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Captura MP3</p>
                 </div>
                 <div
                   className={`w-5 h-5 rounded-lg flex items-center justify-center transition-colors ${
