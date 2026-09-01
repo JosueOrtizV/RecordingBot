@@ -293,7 +293,6 @@ export const RecordingDetailPage: React.FC = () => {
                   title={recording.meeting_title}
                   className="w-full h-full border-0"
                   allow="autoplay; encrypted-media; fullscreen"
-                  allowFullScreen
                 />
               </div>
             ) : recording.drive_url ? (
