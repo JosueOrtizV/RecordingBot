@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -10,6 +10,8 @@ import { DashboardPage } from './pages/DashboardPage';
 import { JoinMeetingPage } from './pages/JoinMeetingPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { RecordingsPage } from './pages/RecordingsPage';
+import { RecordingDetailPage } from './pages/RecordingDetailPage';
+import { SharedRecordingPage } from './pages/SharedRecordingPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { Loader2 } from 'lucide-react';
 
@@ -53,11 +55,15 @@ export const App: React.FC = () => {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            {/* Public standalone shared recording view */}
+            <Route path="/r/:token" element={<SharedRecordingPage />} />
+
             <Route element={<ProtectedLayout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/join" element={<JoinMeetingPage />} />
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/recordings" element={<RecordingsPage />} />
+              <Route path="/recordings/:id" element={<RecordingDetailPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
             </Route>

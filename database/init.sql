@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
     max_recording_minutes INTEGER DEFAULT 180,
     auto_join BOOLEAN DEFAULT true,        -- auto-join desde calendario
     telegram_chat_id VARCHAR(50),          -- notificaciones personalizadas
+    minutes_prompt TEXT,                   -- prompt personalizado para minutas IA
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -55,15 +56,20 @@ CREATE TABLE IF NOT EXISTS recordings (
     drive_file_id VARCHAR(255),               -- ID del archivo en Google Drive del usuario
     drive_url TEXT,                           -- enlace directo al archivo en Drive
     transcript_text TEXT,                     -- transcripción completa guardada en DB
+    ai_minutes_text TEXT,                     -- minuta generada por Gemini AI guardada en DB
     duration_seconds INTEGER,
     recording_mode VARCHAR(20) DEFAULT 'video',  -- 'video', 'audio', 'transcript_only'
     status VARCHAR(20) DEFAULT 'pending',        -- 'pending', 'recording', 'completed', 'failed'
     error_message TEXT,
     dedup_group_id UUID,                      -- si fue reunión compartida, enlazar copias
+    share_token UUID DEFAULT NULL,            -- token único para enlaces compartidos
+    share_access VARCHAR(20) DEFAULT 'private', -- 'private', 'registered', 'public'
     started_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_recordings_share_token ON recordings(share_token) WHERE share_token IS NOT NULL;
 
 -- 5. Reuniones programadas detectadas (visible en el panel)
 CREATE TABLE IF NOT EXISTS scheduled_meetings (

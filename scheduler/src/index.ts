@@ -36,6 +36,11 @@ async function startNotificationListener() {
           driveUrl = `https://drive.google.com/file/d/${fileId}/view`;
         }
 
+        if (!fileId && driveUrl) {
+          const match = driveUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || driveUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+          if (match) fileId = match[1];
+        }
+
         const durationSecs = data.metadata?.duration || data.metadata?.storage?.duration || 0;
         const botId = data.metadata?.botId || '';
         const eventId = data.metadata?.eventId || '';

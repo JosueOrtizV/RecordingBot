@@ -16,6 +16,7 @@ export interface UserSettings {
   max_recording_minutes: number;
   auto_join: boolean;
   telegram_chat_id?: string;
+  minutes_prompt?: string;
 }
 
 export interface ScheduledMeeting {
@@ -45,6 +46,11 @@ export interface Recording {
   status: 'pending' | 'recording' | 'completed' | 'failed';
   error_message?: string;
   has_transcript: boolean;
+  transcript_text?: string;
+  ai_minutes_text?: string;
+  share_token?: string;
+  share_access?: 'private' | 'registered' | 'public';
+  owner_name?: string;
   started_at: string;
   completed_at?: string;
   created_at: string;

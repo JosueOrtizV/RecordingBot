@@ -115,3 +115,49 @@ export async function getUserDriveFolderId(userId: string): Promise<string | nul
     return null;
   }
 }
+
+export async function setDriveFilePublic(userId: string, fileId: string): Promise<boolean> {
+  try {
+    const auth = await getUserOAuth2Client(userId);
+    const drive = google.drive({ version: 'v3', auth });
+
+    // Check existing permissions to prevent duplicate anyone permission
+    const listRes = await drive.permissions.list({ fileId, fields: 'permissions(id, type, role)' });
+    const hasPublic = listRes.data.permissions?.some((p) => p.type === 'anyone');
+
+    if (!hasPublic) {
+      await drive.permissions.create({
+        fileId,
+        requestBody: {
+          role: 'reader',
+          type: 'anyone',
+        },
+      });
+    }
+    return true;
+  } catch (err) {
+    console.warn('Error setting Drive file public permission:', err);
+    return false;
+  }
+}
+
+export async function setDriveFilePrivate(userId: string, fileId: string): Promise<boolean> {
+  try {
+    const auth = await getUserOAuth2Client(userId);
+    const drive = google.drive({ version: 'v3', auth });
+
+    const listRes = await drive.permissions.list({ fileId, fields: 'permissions(id, type, role)' });
+    const anyonePerm = listRes.data.permissions?.find((p) => p.type === 'anyone');
+
+    if (anyonePerm && anyonePerm.id) {
+      await drive.permissions.delete({
+        fileId,
+        permissionId: anyonePerm.id,
+      });
+    }
+    return true;
+  } catch (err) {
+    console.warn('Error revoking Drive file public permission:', err);
+    return false;
+  }
+}

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../api/client';
 import { Recording, RecordingStats } from '../types';
 import {
@@ -21,8 +22,8 @@ import {
   ChevronRight,
   SlidersHorizontal,
   Activity,
+  Eye,
 } from 'lucide-react';
-import { TranscriptModal } from '../components/TranscriptModal';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 
@@ -31,6 +32,7 @@ type ModeFilter = 'all' | 'video' | 'audio' | 'transcript_only';
 type StatusFilter = 'all' | 'completed' | 'recording' | 'failed';
 
 export const RecordingsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [stats, setStats] = useState<RecordingStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -43,11 +45,6 @@ export const RecordingsPage: React.FC = () => {
   const [modeFilter, setModeFilter] = useState<ModeFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [onlyTranscript, setOnlyTranscript] = useState(false);
-
-  // Transcript modal state
-  const [selectedRecordingId, setSelectedRecordingId] = useState<string | null>(null);
-  const [selectedTitle, setSelectedTitle] = useState<string>('');
-  const [selectedTranscript, setSelectedTranscript] = useState<string | null>(null);
 
   // Date labels for tabs
   const now = new Date();
@@ -113,18 +110,6 @@ export const RecordingsPage: React.FC = () => {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
-
-  const openTranscript = async (id: string, title: string) => {
-    setSelectedRecordingId(id);
-    setSelectedTitle(title);
-    setSelectedTranscript(null);
-    try {
-      const data = await fetchApi<{ transcript: string }>(`/api/recordings/${id}/transcript`);
-      setSelectedTranscript(data.transcript);
-    } catch (err: any) {
-      setSelectedTranscript('No se pudo cargar la transcripción: ' + err.message);
-    }
-  };
 
   const deleteRecording = async (id: string) => {
     if (!confirm('¿Seguro que deseas eliminar este registro del historial? (El archivo en Google Drive se conservará)')) {
@@ -459,10 +444,14 @@ export const RecordingsPage: React.FC = () => {
                   const date = new Date(rec.created_at);
 
                   return (
-                    <tr key={rec.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group">
+                    <tr
+                      key={rec.id}
+                      onClick={() => navigate(`/recordings/${rec.id}`)}
+                      className="hover:bg-slate-100/70 dark:hover:bg-slate-800/60 transition-colors group cursor-pointer"
+                    >
                       {/* Meeting Title & Meet Link */}
                       <td className="py-4 pr-4">
-                        <div className="font-bold text-slate-900 dark:text-slate-100 max-w-[260px] truncate text-[13px]">
+                        <div className="font-bold text-slate-900 dark:text-slate-100 max-w-[260px] truncate text-[13px] group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                           {rec.meeting_title || 'Reunión sin título'}
                         </div>
                         {rec.meeting_url && (
@@ -470,6 +459,7 @@ export const RecordingsPage: React.FC = () => {
                             href={rec.meeting_url}
                             target="_blank"
                             rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
                             className="text-[11px] font-mono text-sky-600 dark:text-sky-400 hover:underline inline-flex items-center gap-1 truncate max-w-[260px] mt-0.5"
                             title={`Abrir Google Meet: ${rec.meeting_url}`}
                           >
@@ -547,18 +537,16 @@ export const RecordingsPage: React.FC = () => {
                       </td>
 
                       {/* Actions */}
-                      <td className="py-4 text-right whitespace-nowrap">
+                      <td className="py-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-2">
-                          {rec.has_transcript && (
-                            <button
-                              onClick={() => openTranscript(rec.id, rec.meeting_title)}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-bold text-[11px] transition-colors border border-indigo-500/20 shadow-xs"
-                              title="Ver y descargar transcripción"
-                            >
-                              <FileText className="w-3.5 h-3.5" />
-                              <span>Transcripción</span>
-                            </button>
-                          )}
+                          <button
+                            onClick={() => navigate(`/recordings/${rec.id}`)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] transition-all active:scale-95 shadow-xs shadow-indigo-600/30"
+                            title="Ver grabación, reproductor y transcripción"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Ver</span>
+                          </button>
 
                           {rec.drive_url && (
                             <a
@@ -618,14 +606,6 @@ export const RecordingsPage: React.FC = () => {
           </div>
         )}
       </div>
-
-      {/* Transcript Modal */}
-      <TranscriptModal
-        recordingId={selectedRecordingId}
-        title={selectedTitle}
-        transcript={selectedTranscript}
-        onClose={() => setSelectedRecordingId(null)}
-      />
     </div>
   );
 };

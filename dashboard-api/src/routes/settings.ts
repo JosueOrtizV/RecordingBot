@@ -49,6 +49,7 @@ router.put('/', requireAuth, async (req: Request, res: Response) => {
     const maxRecordingMinutes = req.body.maxRecordingMinutes !== undefined ? req.body.maxRecordingMinutes : req.body.max_recording_minutes;
     const autoJoin = req.body.autoJoin !== undefined ? req.body.autoJoin : req.body.auto_join;
     const telegramChatId = req.body.telegramChatId !== undefined ? req.body.telegramChatId : req.body.telegram_chat_id;
+    const minutesPrompt = req.body.minutesPrompt !== undefined ? req.body.minutesPrompt : req.body.minutes_prompt;
 
     if (botDisplayName) {
       await query('UPDATE users SET bot_display_name = $1, updated_at = NOW() WHERE id = $2', [
@@ -60,9 +61,9 @@ router.put('/', requireAuth, async (req: Request, res: Response) => {
     const updateRes = await query(
       `INSERT INTO user_settings (
          user_id, enable_video, enable_audio, enable_transcription,
-         drive_folder_name, max_recording_minutes, auto_join, telegram_chat_id, updated_at
+         drive_folder_name, max_recording_minutes, auto_join, telegram_chat_id, minutes_prompt, updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
        ON CONFLICT (user_id) DO UPDATE SET
          enable_video = COALESCE($2, user_settings.enable_video),
          enable_audio = COALESCE($3, user_settings.enable_audio),
@@ -71,6 +72,7 @@ router.put('/', requireAuth, async (req: Request, res: Response) => {
          max_recording_minutes = COALESCE($6, user_settings.max_recording_minutes),
          auto_join = COALESCE($7, user_settings.auto_join),
          telegram_chat_id = COALESCE($8, user_settings.telegram_chat_id),
+         minutes_prompt = CASE WHEN $9::text IS NOT NULL THEN $9 ELSE user_settings.minutes_prompt END,
          updated_at = NOW()
        RETURNING *`,
       [
@@ -82,6 +84,7 @@ router.put('/', requireAuth, async (req: Request, res: Response) => {
         maxRecordingMinutes,
         autoJoin,
         telegramChatId,
+        minutesPrompt !== undefined ? minutesPrompt : null,
       ]
     );
 

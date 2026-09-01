@@ -2,7 +2,59 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { fetchApi } from '../api/client';
 import { BlocklistItem } from '../types';
-import { Settings, ShieldAlert, Plus, Trash2, CheckCircle2, Save, Video, Mic, FileText, Folder, Bot, Bell, Check, HelpCircle, Send, Info, X } from 'lucide-react';
+import {
+  Settings,
+  ShieldAlert,
+  Plus,
+  Trash2,
+  CheckCircle2,
+  Save,
+  Video,
+  Mic,
+  FileText,
+  Folder,
+  Bot,
+  Bell,
+  Check,
+  HelpCircle,
+  Send,
+  Info,
+  X,
+  Sparkles,
+  RotateCcw,
+} from 'lucide-react';
+
+const DEFAULT_PROMPT_TEMPLATE = `Eres un asistente experto en análisis y síntesis de reuniones de trabajo y proyectos.
+A partir de la siguiente transcripción de una reunión, genera una minuta profesional, clara, exhaustiva y bien organizada en formato Markdown.
+
+La minuta debe contener la siguiente estructura:
+
+# 📋 Minuta de Reunión: {{TITLE}}
+
+## 🎯 Resumen Ejecutivo
+Un resumen ejecutivo de alto nivel (1 a 2 párrafos) que sintetice el propósito central de la reunión y las conclusiones principales.
+
+## 👥 Participantes e Intervenciones
+- Lista de los participantes identificados y su aporte o rol en la sesión.
+
+## 📌 Temas Tratados y Puntos Clave
+Detalla los temas discutidos organizados con subtítulos claros, incluyendo contexto y puntos relevantes expresados por los participantes.
+
+## ✅ Decisiones Tomadas
+Enumera con precisión cada una de las decisiones o acuerdos a los que se llegó.
+
+## 🚀 Acciones y Compromisos (Action Items)
+| Tarea / Acción | Responsable | Fecha / Plazo | Prioridad |
+| --- | --- | --- | --- |
+
+## ❓ Puntos Abiertos y Seguimiento
+Lista de temas diferidos para próximas sesiones o pendientes sin resolver.
+
+---
+*Reglas de estilo:*
+- Escribe completamente en español profesional y con excelente redacción.
+- Usa formato Markdown limpio con negritas, viñetas y tablas legibles.
+- Sé fidedigno a la transcripción: no inventes acuerdos o datos que no existan.`;
 
 export const SettingsPage: React.FC = () => {
   const { user, settings, updateSettings } = useAuth();
@@ -15,6 +67,7 @@ export const SettingsPage: React.FC = () => {
   const [driveFolder, setDriveFolder] = useState(settings?.drive_folder_name || 'RecordingBot');
   const [telegramChatId, setTelegramChatId] = useState(settings?.telegram_chat_id || '');
   const [autoJoin, setAutoJoin] = useState(settings?.auto_join ?? true);
+  const [minutesPrompt, setMinutesPrompt] = useState(settings?.minutes_prompt || '');
 
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -36,6 +89,7 @@ export const SettingsPage: React.FC = () => {
       setDriveFolder(settings.drive_folder_name || 'RecordingBot');
       setTelegramChatId(settings.telegram_chat_id || '');
       setAutoJoin(settings.auto_join ?? true);
+      setMinutesPrompt(settings.minutes_prompt || '');
     }
     if (user?.botDisplayName) {
       setBotDisplayName(user.botDisplayName);
@@ -69,6 +123,7 @@ export const SettingsPage: React.FC = () => {
         drive_folder_name: driveFolder,
         telegram_chat_id: telegramChatId,
         auto_join: autoJoin,
+        minutes_prompt: minutesPrompt,
       });
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
@@ -281,6 +336,44 @@ export const SettingsPage: React.FC = () => {
             />
             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
               Si configuras tu Chat ID, recibirás mensajes directos cuando tus grabaciones concluyan.
+            </p>
+          </div>
+
+          {/* AI Meeting Minutes Prompt Configuration */}
+          <div className="pt-4 border-t border-slate-200/80 dark:border-slate-800 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-indigo-500" />
+                  <span>Prompt Personalizado para Minuta con IA</span>
+                </label>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Instrucciones que recibirá la Inteligencia Artificial para resumir tus reuniones. Puedes usar <code className="text-indigo-600 dark:text-indigo-400 font-mono text-[10px] bg-indigo-50 dark:bg-indigo-950/60 px-1 py-0.5 rounded">{'{{TITLE}}'}</code> para el nombre de la reunión.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setMinutesPrompt(DEFAULT_PROMPT_TEMPLATE)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-all active:scale-95 self-start cursor-pointer"
+                title="Cargar la plantilla de minuta por defecto"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                <span>Cargar Plantilla por Defecto</span>
+              </button>
+            </div>
+
+            <div className="relative">
+              <textarea
+                value={minutesPrompt}
+                onChange={(e) => setMinutesPrompt(e.target.value)}
+                placeholder={DEFAULT_PROMPT_TEMPLATE}
+                rows={8}
+                className="w-full bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 text-xs font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors leading-relaxed resize-y"
+              />
+            </div>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 italic">
+              * Si dejas este campo en blanco, se utilizará automáticamente la plantilla ejecutiva estándar de RecordingBot en español.
             </p>
           </div>
 

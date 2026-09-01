@@ -837,7 +837,12 @@ export class GoogleMeetBot extends MeetBotBase {
             }
             
             stream = await (navigator.mediaDevices as any).getDisplayMedia({
-              video: true,
+              video: {
+                displaySurface: 'browser',
+                width: { ideal: 1280, max: 1920 },
+                height: { ideal: 720, max: 1080 },
+                frameRate: { ideal: 30, max: 30 },
+              },
               audio: {
                 autoGainControl: false,
                 channels: 2,
@@ -864,7 +869,13 @@ export class GoogleMeetBot extends MeetBotBase {
             }
 
             console.log(`Media Recorder will use ${selectedMimeType} codecs (Mode: ${recordingMode})...`);
-            mediaRecorder = new MediaRecorder(streamToRecord, { mimeType: selectedMimeType });
+            const recorderOptions: any = {
+              mimeType: selectedMimeType,
+              ...(isAudioOnlyMode
+                ? { audioBitsPerSecond: 128000 }
+                : { videoBitsPerSecond: 2500000, audioBitsPerSecond: 128000 }),
+            };
+            mediaRecorder = new MediaRecorder(streamToRecord, recorderOptions);
             console.log(`Media Recorder actual mime type: ${mediaRecorder.mimeType}`);
 
             mediaRecorder.ondataavailable = (event: BlobEvent) => {

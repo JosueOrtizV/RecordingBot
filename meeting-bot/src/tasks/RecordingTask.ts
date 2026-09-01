@@ -67,7 +67,12 @@ export class RecordingTask extends Task<null, void> {
           }
 
           const stream: MediaStream = await (navigator.mediaDevices as any).getDisplayMedia({
-            video: true,
+            video: {
+              displaySurface: 'browser',
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 },
+              frameRate: { ideal: 30, max: 30 },
+            },
             audio: {
               autoGainControl: false,
               channels: 2,
@@ -84,7 +89,11 @@ export class RecordingTask extends Task<null, void> {
           }
 
           console.log(`Media Recorder will use ${selectedMimeType} codecs...`);
-          const mediaRecorder = new MediaRecorder(stream, { mimeType: selectedMimeType });
+          const mediaRecorder = new MediaRecorder(stream, {
+            mimeType: selectedMimeType,
+            videoBitsPerSecond: 2500000,
+            audioBitsPerSecond: 128000,
+          });
           console.log(`Media Recorder actual mime type: ${mediaRecorder.mimeType}`);
           let chunkUploadChain: Promise<void> = Promise.resolve();
           let isStoppingRecording = false;
