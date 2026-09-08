@@ -44,7 +44,14 @@ export const SharedRecordingPage: React.FC = () => {
       const data = await fetchApi<{ recording: Recording }>(`/api/shared/${token}`);
       setRecording(data.recording);
     } catch (err: any) {
-      if (err.message?.includes('registrados') || err.message?.includes('401') || err.message?.includes('expirado')) {
+      if (
+        err.status === 401 ||
+        err.data?.requiresAuth ||
+        err.message?.toLowerCase().includes('registrados') ||
+        err.message?.toLowerCase().includes('autenticado') ||
+        err.message?.toLowerCase().includes('sesión') ||
+        err.message?.toLowerCase().includes('expirado')
+      ) {
         setRequiresAuth(true);
       } else {
         setError(err.message || 'Grabación no encontrada o enlace privado.');
