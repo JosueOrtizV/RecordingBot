@@ -28,4 +28,5 @@ export interface JoinParams {
 
 export abstract class AbstractMeetBot {
   abstract join(params: JoinParams): Promise<void>;
+  abstract stop(save: boolean): Promise<{ success: boolean; message: string }>;
 }

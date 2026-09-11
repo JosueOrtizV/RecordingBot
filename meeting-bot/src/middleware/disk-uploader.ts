@@ -51,6 +51,8 @@ export interface IUploader {
   saveDataToTempFile(data: Buffer): Promise<boolean>;
   saveTranscript(content: string): Promise<void>;
   setRecordingDuration(durationSeconds: number): void;
+  discard(): Promise<void>;
+  readonly dedupGroupId?: string;
 }
 
 // Save to disk and upload in one session
@@ -86,7 +88,7 @@ class DiskUploader implements IUploader {
   private lastTranscriptContent?: string;
   private userTokens?: any;
   private driveFolderName?: string;
-  private dedupGroupId?: string;
+  public readonly dedupGroupId?: string;
 
   private queue: Buffer[];
   private writing: boolean;
@@ -95,6 +97,7 @@ class DiskUploader implements IUploader {
   private _recordingMode: string = 'video';
   private _startTime: Date;
   private forceUpload: boolean;
+  private _isDiscarded: boolean = false;
 
   private constructor(
     token: string,
@@ -498,6 +501,15 @@ class DiskUploader implements IUploader {
     }
   }
 
+  public async discard(): Promise<void> {
+    this._isDiscarded = true;
+    this.writing = false;
+    this.queue = [];
+    this.lastTranscriptContent = undefined;
+    this._logger.info('Discarding recording files and cancelling upload...', this._userId);
+    await this.deleteTempFileAsync();
+  }
+
   private async tempFileExists(): Promise<boolean> {
     try {
       const filePath = DiskUploader.getFilePath(this._userId, this._tempFileId, this.fileExtension);
@@ -864,6 +876,11 @@ class DiskUploader implements IUploader {
 
   public async uploadRecordingToRemoteStorage(options?: { forceUpload?: boolean }) {
     try {
+      if (this._isDiscarded) {
+        this._logger.info('Recording upload skipped because it was discarded by user.', this._userId);
+        return false;
+      }
+
       if (typeof options?.forceUpload === 'boolean') {
         this.forceUpload = options.forceUpload;
       }

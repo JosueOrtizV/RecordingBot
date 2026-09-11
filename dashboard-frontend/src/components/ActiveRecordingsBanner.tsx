@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../api/client';
 import { WorkerStatus } from '../types';
-import { Radio, Loader2, User, Video, Mic, FileText } from 'lucide-react';
+import { Radio, Loader2, User, Video, Mic, FileText, Square } from 'lucide-react';
+import { StopRecordingModal } from './StopRecordingModal';
 
 export const ActiveRecordingsBanner: React.FC = () => {
   const [status, setStatus] = useState<WorkerStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedRecording, setSelectedRecording] = useState<{ id: string; title: string } | null>(null);
 
   const fetchStatus = async () => {
     try {
@@ -85,9 +87,19 @@ export const ActiveRecordingsBanner: React.FC = () => {
                     </span>
                   </div>
                 </div>
-                <span className="px-2.5 py-1 rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-mono text-[10px] font-bold shrink-0 animate-pulse">
-                  GRABANDO
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="px-2.5 py-1 rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-mono text-[10px] font-bold animate-pulse">
+                    GRABANDO
+                  </span>
+                  <button
+                    onClick={() => setSelectedRecording({ id: rec.id, title: rec.meeting_title || 'Reunión en Curso' })}
+                    title="Detener grabación"
+                    className="px-2.5 py-1 rounded-xl bg-rose-500 hover:bg-rose-600 text-white shadow-sm shadow-rose-500/20 transition-all flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer active:scale-95"
+                  >
+                    <Square className="w-3 h-3 fill-current" />
+                    <span>Detener</span>
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -106,6 +118,18 @@ export const ActiveRecordingsBanner: React.FC = () => {
             Asignación automática por orden de llegada
           </span>
         </div>
+      )}
+
+      {selectedRecording && (
+        <StopRecordingModal
+          recordingId={selectedRecording.id}
+          meetingTitle={selectedRecording.title}
+          isOpen={true}
+          onClose={() => setSelectedRecording(null)}
+          onStopped={() => {
+            fetchStatus();
+          }}
+        />
       )}
     </div>
   );

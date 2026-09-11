@@ -70,7 +70,15 @@ export class JobStore {
   ): Promise<void> {
     try {
       await task();
-    } catch (error) {
+    } catch (error: any) {
+      logger.error('executeTaskWithRetry caught error in meeting task:', {
+        name: error?.name,
+        message: error?.message,
+        stack: error?.stack,
+        isKnownError: error instanceof KnownError,
+        retryCount,
+      });
+
       if (error instanceof KnownError && !error.retryable) {
         logger.error('KnownError is not retryable:', error.name, error.message);
         throw error;
@@ -78,6 +86,12 @@ export class JobStore {
 
       if (error instanceof KnownError && error.retryable && (retryCount + 1) >= error.maxRetries) {
         logger.error(`KnownError: ${error.maxRetries} tries consumed:`, error.name, error.message);
+        throw error;
+      }
+
+      // If this was an intentional cancellation or user stop, do not retry
+      if (error?.message?.includes('cancelled') || error?.name === 'RecordingCancelledError') {
+        logger.info('Job was cancelled by user; exiting without retry.');
         throw error;
       }
 

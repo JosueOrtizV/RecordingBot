@@ -23,16 +23,20 @@ import {
   SlidersHorizontal,
   Activity,
   Eye,
+  Square,
+  XCircle,
 } from 'lucide-react';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { StopRecordingModal } from '../components/StopRecordingModal';
 
 type TimeRangeFilter = 'today' | 'week' | 'month' | 'all';
 type ModeFilter = 'all' | 'video' | 'audio' | 'transcript_only';
-type StatusFilter = 'all' | 'completed' | 'recording' | 'failed';
+type StatusFilter = 'all' | 'completed' | 'recording' | 'failed' | 'cancelled';
 
 export const RecordingsPage: React.FC = () => {
   const navigate = useNavigate();
+  const [selectedForStop, setSelectedForStop] = useState<{ id: string; title: string } | null>(null);
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [stats, setStats] = useState<RecordingStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -361,6 +365,7 @@ export const RecordingsPage: React.FC = () => {
                 <option value="completed">Completadas</option>
                 <option value="recording">En Curso</option>
                 <option value="failed">Fallidas</option>
+                <option value="cancelled">Canceladas</option>
               </select>
             </div>
 
@@ -529,6 +534,14 @@ export const RecordingsPage: React.FC = () => {
                             <AlertCircle className="w-3 h-3" />
                             Fallida
                           </span>
+                        ) : rec.status === 'cancelled' ? (
+                          <span
+                            title={rec.error_message || 'Cancelada por el usuario'}
+                            className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-400 bg-slate-500/10 border border-slate-500/20 px-2.5 py-0.5 rounded-full font-bold"
+                          >
+                            <XCircle className="w-3 h-3 text-slate-400" />
+                            Cancelada
+                          </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-bold">
                             Pendiente
@@ -539,6 +552,17 @@ export const RecordingsPage: React.FC = () => {
                       {/* Actions */}
                       <td className="py-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-2">
+                          {(rec.status === 'recording' || rec.status === 'pending') && (
+                            <button
+                              onClick={() => setSelectedForStop({ id: rec.id, title: rec.meeting_title || 'Reunión' })}
+                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-600 dark:text-rose-400 hover:text-white border border-rose-500/20 font-bold text-[11px] transition-all active:scale-95 cursor-pointer"
+                              title="Detener o cancelar grabación"
+                            >
+                              <Square className="w-3 h-3 fill-current" />
+                              <span>Detener</span>
+                            </button>
+                          )}
+
                           <button
                             onClick={() => navigate(`/recordings/${rec.id}`)}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] transition-all active:scale-95 shadow-xs shadow-indigo-600/30"
@@ -606,6 +630,18 @@ export const RecordingsPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {selectedForStop && (
+        <StopRecordingModal
+          recordingId={selectedForStop.id}
+          meetingTitle={selectedForStop.title}
+          isOpen={true}
+          onClose={() => setSelectedForStop(null)}
+          onStopped={() => {
+            loadRecordings(page);
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -52,7 +52,7 @@ export interface MeetingFailureContext {
   provider?: string;
 }
 
-type RedisNotificationPayload = RecordingCompletedPayload | MeetingFailedPayload;
+type RedisNotificationPayload = RecordingCompletedPayload | MeetingFailedPayload | RecordingStartedPayload;
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -132,6 +132,22 @@ async function rpushToRedisList(
       } catch {}
     }
   }
+}
+
+export interface RecordingStartedPayload {
+  recordingId: string;
+  botId?: string;
+  eventId?: string;
+  userId: string;
+  url: string;
+  recordingMode?: string;
+  meetingTitle?: string;
+  dedupGroupId?: string;
+  timestamp: string;
+}
+
+export async function notifyRecordingStarted(payload: RecordingStartedPayload, logger: Logger) {
+  await rpushToRedisList(payload, logger, config.notifyRedisStartedList, 'Recording started');
 }
 
 export async function notifyRecordingCompleted(payload: RecordingCompletedPayload, logger: Logger) {

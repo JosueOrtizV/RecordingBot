@@ -20,10 +20,13 @@ import {
   Users,
   HardDrive,
   Info,
+  Square,
+  XCircle,
 } from 'lucide-react';
 import { TranscriptView } from '../components/TranscriptView';
 import { MinutesView } from '../components/MinutesView';
 import { ShareModal } from '../components/ShareModal';
+import { StopRecordingModal } from '../components/StopRecordingModal';
 import { Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -36,6 +39,7 @@ export const RecordingDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [stopModalOpen, setStopModalOpen] = useState(false);
   const [activeMobileTab, setActiveMobileTab] = useState<'media' | 'transcript' | 'minutes'>('media');
   const [rightColumnTab, setRightColumnTab] = useState<'transcript' | 'minutes'>('minutes');
 
@@ -149,11 +153,34 @@ export const RecordingDetailPage: React.FC = () => {
               )}
             </span>
 
-            {/* Status Badge */}
+            {/* Status Badges */}
             {recording.status === 'completed' && (
               <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                 <CheckCircle2 className="w-3 h-3" />
                 Completada
+              </span>
+            )}
+            {recording.status === 'recording' && (
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                Grabando en Vivo
+              </span>
+            )}
+            {recording.status === 'pending' && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                En Cola
+              </span>
+            )}
+            {recording.status === 'cancelled' && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-500/10 text-slate-600 dark:text-slate-400 border border-slate-500/20">
+                <XCircle className="w-3 h-3 text-slate-400" />
+                Cancelada
+              </span>
+            )}
+            {recording.status === 'failed' && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                <AlertCircle className="w-3 h-3" />
+                Fallida
               </span>
             )}
           </div>
@@ -187,6 +214,18 @@ export const RecordingDetailPage: React.FC = () => {
 
         {/* Header Action Buttons */}
         <div className="flex items-center gap-2.5 shrink-0">
+          {/* Stop / Cancel Button for active or pending recording */}
+          {(recording.status === 'recording' || recording.status === 'pending') && (
+            <button
+              onClick={() => setStopModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs transition-all active:scale-95 shadow-md shadow-rose-500/20 cursor-pointer"
+              title="Detener o cancelar grabación"
+            >
+              <Square className="w-3.5 h-3.5 fill-current" />
+              <span>Detener Grabación</span>
+            </button>
+          )}
+
           {/* Share Button */}
           <button
             onClick={() => setShareModalOpen(true)}
@@ -226,6 +265,23 @@ export const RecordingDetailPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Cancelled Notice */}
+      {recording.status === 'cancelled' && (
+        <div className="p-4 sm:p-5 rounded-3xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 flex items-center gap-3 text-slate-700 dark:text-slate-300 text-xs">
+          <div className="w-10 h-10 rounded-2xl bg-slate-200 dark:bg-slate-700 flex items-center justify-center shrink-0 text-slate-500">
+            <XCircle className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+              Grabación Cancelada
+            </p>
+            <p className="text-slate-500 dark:text-slate-400 mt-0.5">
+              Esta reunión fue cancelada antes de finalizar. No se generaron archivos de grabación ni se subió contenido a Google Drive.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Tab Switcher */}
       <div className="flex lg:hidden items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">
@@ -453,6 +509,19 @@ export const RecordingDetailPage: React.FC = () => {
         onUpdateSuccess={(newAccess, newShareToken) => {
           setRecording((prev) =>
             prev ? { ...prev, share_access: newAccess, share_token: newShareToken } : prev
+          );
+        }}
+      />
+
+      {/* Stop Recording Modal */}
+      <StopRecordingModal
+        recordingId={recording.id}
+        meetingTitle={recording.meeting_title}
+        isOpen={stopModalOpen}
+        onClose={() => setStopModalOpen(false)}
+        onStopped={(save) => {
+          setRecording((prev) =>
+            prev ? { ...prev, status: save ? 'completed' : 'cancelled' } : prev
           );
         }}
       />

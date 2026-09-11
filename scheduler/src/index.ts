@@ -10,16 +10,59 @@ import { query } from './db';
 async function startNotificationListener() {
   const redis = getRedisClient().duplicate();
 
-  logger.info(`Listening for Redis completion notifications on "${config.redisRecordingList}" and "${config.redisFailureList}"...`);
+  logger.info(`Listening for Redis notifications on "${config.redisRecordingList}", "${config.redisFailureList}" and "${config.redisStartedList}"...`);
 
   while (true) {
     try {
-      // Blocking pop from both lists
-      const result = await redis.brpop(config.redisRecordingList, config.redisFailureList, 0);
+      // Blocking pop from all notification lists
+      const result = await redis.brpop(config.redisRecordingList, config.redisFailureList, config.redisStartedList, 0);
       if (!result) continue;
 
       const [listName, payloadStr] = result;
       const data = JSON.parse(payloadStr);
+
+      if (listName === config.redisStartedList) {
+        const botId = data.botId || '';
+        const eventId = data.eventId || '';
+        const recordingId = data.recordingId || botId;
+        const dedupGroupId = data.dedupGroupId;
+
+        logger.info('Received recording started notification:', {
+          recordingId,
+          botId,
+          eventId,
+          dedupGroupId,
+          url: data.url,
+          mode: data.recordingMode,
+        });
+
+        try {
+          if (recordingId || botId || eventId) {
+            await query(
+              `UPDATE recordings
+               SET status = 'recording',
+                   started_at = COALESCE(started_at, NOW())
+               WHERE (id::text = $1 OR calendar_event_id = $1 OR id::text = $2 OR calendar_event_id = $2)
+                 AND status != 'completed' AND status != 'cancelled'`,
+              [recordingId, botId || eventId]
+            );
+          }
+
+          if (dedupGroupId) {
+            await query(
+              `UPDATE recordings
+               SET status = 'recording',
+                   started_at = COALESCE(started_at, NOW())
+               WHERE dedup_group_id::text = $1
+                 AND status != 'completed' AND status != 'cancelled'`,
+              [dedupGroupId]
+            );
+          }
+        } catch (dbErr) {
+          logger.warn('Failed to update started recording in DB:', dbErr);
+        }
+        continue;
+      }
 
       if (listName === config.redisRecordingList) {
         const title = data.metadata?.meetingTitle || data.metadata?.namePrefix || 'Reunión';

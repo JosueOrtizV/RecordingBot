@@ -16,15 +16,58 @@ import { GOOGLE_LOBBY_MODE_HOST_TEXT, GOOGLE_REQUEST_DENIED, GOOGLE_REQUEST_TIME
 import { getRecordingMimeTypesForExtension } from '../lib/recording';
 import { getGoogleMeetDisplayName } from '../util/googleMeetDisplayName';
 import { CaptionTask } from '../tasks/CaptionTask';
+import { activeBotRegistry } from '../lib/activeBots';
+import { notifyRecordingStarted } from '../services/notificationService';
 
 export class GoogleMeetBot extends MeetBotBase {
   private _logger: Logger;
   private _correlationId: string;
+  private isCancelledWithoutSave: boolean = false;
+  private waitingPromise: WaitPromise | null = null;
+
   constructor(logger: Logger, correlationId: string) {
     super();
     this.slightlySecretId = v4();
     this._logger = logger;
     this._correlationId = correlationId;
+  }
+
+  async stop(save: boolean): Promise<{ success: boolean; message: string }> {
+    this._logger.info(`Stop requested for GoogleMeetBot. Save: ${save}`);
+    if (!save) {
+      this.isCancelledWithoutSave = true;
+    }
+
+    try {
+      if (this.page && !this.page.isClosed()) {
+        await this.page.evaluate(() => {
+          if (typeof (window as any).__stopRecording === 'function') {
+            (window as any).__stopRecording();
+          }
+        }).catch(() => {});
+      }
+    } catch (err) {
+      this._logger.warn('Could not trigger in-page __stopRecording', err);
+    }
+
+    if (this.waitingPromise) {
+      this.waitingPromise.resolveEarly();
+    }
+
+    if (!save) {
+      try {
+        if (this.page && !this.page.isClosed()) {
+          await this.page.close().catch(() => {});
+        }
+      } catch (err) {
+        this._logger.warn('Error closing page during non-save stop', err);
+      }
+    }
+
+    return {
+      success: true,
+      message: save ? 'Guardando progreso y saliendo de la llamada...' : 'Cancelando y saliendo de la llamada...',
+    };
   }
 
   async join({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, uploader, recordingMode, meetingTitle }: JoinParams): Promise<void> {
@@ -37,9 +80,27 @@ export class GoogleMeetBot extends MeetBotBase {
       return uploadResult;
     };
 
+    if (botId) {
+      activeBotRegistry.register(botId, {
+        botId,
+        meetingTitle,
+        url,
+        userId,
+        stop: (save) => this.stop(save),
+      });
+    }
+
     try {
       const pushState = (st: BotStatus) => _state.push(st);
       await this.joinMeeting({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, uploader, pushState, recordingMode, meetingTitle });
+
+      if (this.isCancelledWithoutSave) {
+        this._logger.info('Recording was cancelled without save. Discarding files and skipping upload...', { botId, userId });
+        await uploader.discard();
+        _state.push('cancelled' as any);
+        await patchBotStatus({ botId, eventId, provider: 'google', status: _state, token: bearerToken }, this._logger);
+        return;
+      }
 
       // Finish the upload from the temp video
       const uploadResult = await handleUpload();
@@ -64,6 +125,10 @@ export class GoogleMeetBot extends MeetBotBase {
 
       throw error;
     } finally {
+      if (botId) {
+        activeBotRegistry.unregister(botId);
+      }
+
       try {
         const context = this.page?.context();
         const browser = context?.browser();
@@ -658,6 +723,18 @@ export class GoogleMeetBot extends MeetBotBase {
 
     // Recording the meeting page
     this._logger.info('Begin recording...', { recordingMode });
+    await notifyRecordingStarted({
+      recordingId: botId ?? eventId ?? userId,
+      botId,
+      eventId,
+      userId,
+      url,
+      recordingMode,
+      meetingTitle,
+      dedupGroupId: uploader.dedupGroupId,
+      timestamp: new Date().toISOString(),
+    }, this._logger).catch(err => this._logger.warn('Failed to notify recording started:', err));
+
     await this.recordMeetingPage({ teamId, eventId, userId, botId, botName: name, uploader, recordingMode, meetingTitle });
 
     pushState('finished');
@@ -754,6 +831,10 @@ export class GoogleMeetBot extends MeetBotBase {
     const inactivityLimit = config.inactivityLimit * 60 * 1000;
     const loneParticipantExitDelayMs = config.loneParticipantExitDelaySeconds * 1000;
     const isAudioOnly = recordingMode === 'audio';
+
+    const processingTime = 0.2 * 60 * 1000;
+    const waitingPromise: WaitPromise = getWaitingPromise(processingTime + duration);
+    this.waitingPromise = waitingPromise;
 
     // Start Closed Captions extractor with meeting title for formatted headers
     const captionTask = new CaptionTask(this.page, this._logger, this.slightlySecretId, meetingTitle);
@@ -960,6 +1041,8 @@ export class GoogleMeetBot extends MeetBotBase {
               (window as any).screenAppMeetEnd(slightlySecretId, recordedDurationSeconds);
             }
           };
+
+          (window as any).__stopRecording = () => stopTheRecording();
 
           let loneTest: NodeJS.Timeout;
           let detectionFailures = 0;
@@ -1404,21 +1487,22 @@ export class GoogleMeetBot extends MeetBotBase {
         slightlySecretId: this.slightlySecretId,
         activateInactivityDetectionAfterMinutes: config.activateInactivityDetectionAfter,
         activateInactivityDetectionAfter: new Date(new Date().getTime() + config.activateInactivityDetectionAfter * 60 * 1000).toISOString(),
-        mimeTypes
+        mimeTypes,
+        recordingMode
       }
     );
   
     this._logger.info('Waiting for recording duration', config.maxRecordingDuration, 'minutes...');
-    const processingTime = 0.2 * 60 * 1000;
-    const waitingPromise: WaitPromise = getWaitingPromise(processingTime + duration);
 
     waitingPromise.promise.then(async () => {
-      // Save transcript before tearing down browser context
-      try {
-        const transcriptText = captionTask.getTranscriptFormatter().format();
-        await uploader.saveTranscript(transcriptText);
-      } catch (err) {
-        this._logger.warn('Could not save transcript via uploader:', err);
+      // Save transcript before tearing down browser context unless cancelled without save
+      if (!this.isCancelledWithoutSave) {
+        try {
+          const transcriptText = captionTask.getTranscriptFormatter().format();
+          await uploader.saveTranscript(transcriptText);
+        } catch (err) {
+          this._logger.warn('Could not save transcript via uploader:', err);
+        }
       }
 
       const context = this.page.context();

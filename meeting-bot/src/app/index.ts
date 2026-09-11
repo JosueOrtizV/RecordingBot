@@ -7,6 +7,7 @@ import microsoftRouter from './microsoft';
 import zoomRouter from './zoom';
 import { globalJobStore } from '../lib/globalJobStore';
 import { RedisConsumerService } from '../connect/RedisConsumerService';
+import { activeBotRegistry } from '../lib/activeBots';
 
 const app = express();
 
@@ -68,6 +69,32 @@ app.get('/debug', async (req, res, next) => {
 app.use('/google', googleRouter);
 app.use('/microsoft', microsoftRouter);
 app.use('/zoom', zoomRouter);
+
+// Endpoint to stop a live bot
+app.post('/bot/:botId/stop', async (req, res) => {
+  const { botId } = req.params;
+  const { save = true } = req.body;
+
+  console.log(`[HTTP /bot/${botId}/stop] Received stop request. Save: ${save}`);
+
+  if (!activeBotRegistry.has(botId)) {
+    return res.status(404).json({
+      success: false,
+      error: 'Bot no encontrado o ya concluyó su llamada.',
+    });
+  }
+
+  try {
+    const result = await activeBotRegistry.stopBot(botId, save === true);
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error(`[HTTP /bot/${botId}/stop] Error stopping bot:`, err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'Error al detener bot',
+    });
+  }
+});
 
 export const setGracefulShutdown = (val: number) =>
   gracefulShutdown = val;

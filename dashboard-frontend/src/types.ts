@@ -43,7 +43,7 @@ export interface Recording {
   drive_url?: string;
   duration_seconds?: number;
   recording_mode: 'video' | 'audio' | 'transcript_only';
-  status: 'pending' | 'recording' | 'completed' | 'failed';
+  status: 'pending' | 'recording' | 'completed' | 'failed' | 'cancelled';
   error_message?: string;
   has_transcript: boolean;
   transcript_text?: string;

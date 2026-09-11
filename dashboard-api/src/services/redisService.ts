@@ -35,3 +35,27 @@ export async function getQueueStats(): Promise<{ pending: number; processing: nu
   ]);
   return { pending, processing };
 }
+
+export async function removePendingMeetingJob(botId: string): Promise<boolean> {
+  try {
+    const redis = getRedisClient();
+    const items = await redis.lrange(config.redis.queueName, 0, -1);
+    let removed = false;
+    for (const item of items) {
+      try {
+        const parsed = JSON.parse(item);
+        if (parsed.botId === botId || parsed.eventId === botId) {
+          await redis.lrem(config.redis.queueName, 1, item);
+          removed = true;
+        }
+      } catch {
+        // ignore JSON parse errors for non-matching entries
+      }
+    }
+    return removed;
+  } catch (err) {
+    console.error(`[Redis] Error removing pending job ${botId}:`, err);
+    return false;
+  }
+}
+

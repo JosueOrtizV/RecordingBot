@@ -28,6 +28,12 @@ class BotBase extends AbstractMeetBot {
   join(params: JoinParams): Promise<void> {
     throw new Error('Function not implemented.');
   }
+  async stop(save: boolean): Promise<{ success: boolean; message: string }> {
+    if (this.page && !this.page.isClosed()) {
+      await this.page.close().catch(() => {});
+    }
+    return { success: true, message: 'Bot detenido exitosamente' };
+  }
 }
 
 export class ZoomBot extends BotBase {
