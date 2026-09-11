@@ -220,7 +220,7 @@ async function createBrowserContext(url: string, correlationId: string, botType:
       correlationId
     );
 
-    const context = browser.contexts()[0] ?? await browser.newContext({
+    const context = await browser.newContext({
       ...contextOptions,
       ...(config.googleChromeStorageStatePath ? {
         storageState: config.googleChromeStorageStatePath,

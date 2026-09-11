@@ -6,8 +6,13 @@ const sleep = (ms: number): Promise<void> =>
   new Promise((r) => setTimeout(r, ms));
 
 export class JobStore {
-  private isRunning: boolean = false;
+  private activeJobs: number = 0;
+  private maxConcurrentJobs: number;
   private shutdownRequested: boolean = false;
+
+  constructor(maxConcurrentJobs: number = 4) {
+    this.maxConcurrentJobs = maxConcurrentJobs;
+  }
 
   async addJob<T>(
     task: () => Promise<T>, 
@@ -16,11 +21,13 @@ export class JobStore {
     onPermanentFailure?: (error: unknown) => Promise<void> | void,
     onCompleted?: () => Promise<void> | void
   ): Promise<{ accepted: boolean }> {
-    if (this.isRunning || this.shutdownRequested) {
+    if (this.activeJobs >= this.maxConcurrentJobs || this.shutdownRequested) {
+      logger.warn(`Job rejected: activeJobs=${this.activeJobs}, maxConcurrent=${this.maxConcurrentJobs}, shutdown=${this.shutdownRequested}`);
       return { accepted: false };
     }
 
-    this.isRunning = true;
+    this.activeJobs++;
+    logger.info(`Job accepted! Active jobs: ${this.activeJobs}/${this.maxConcurrentJobs}`);
     
     // Execute the task asynchronously without waiting for completion
     this.executeTaskWithRetry(task, logger, retryCount).then(async () => {
@@ -48,7 +55,8 @@ export class JobStore {
         }
       }
     }).finally(() => {
-      this.isRunning = false;
+      this.activeJobs = Math.max(0, this.activeJobs - 1);
+      logger.info(`Job completed/cleaned up. Active jobs remaining: ${this.activeJobs}/${this.maxConcurrentJobs}`);
     });
 
     logger.info('LogBasedMetric Bot job has been queued and started recording meeting.');
@@ -87,7 +95,23 @@ export class JobStore {
   }
 
   isBusy(): boolean {
-    return this.isRunning;
+    return this.activeJobs >= this.maxConcurrentJobs;
+  }
+
+  getActiveJobCount(): number {
+    return this.activeJobs;
+  }
+
+  getMaxConcurrentJobs(): number {
+    return this.maxConcurrentJobs;
+  }
+
+  getCapacityInfo(): { active: number; max: number; available: number } {
+    return {
+      active: this.activeJobs,
+      max: this.maxConcurrentJobs,
+      available: Math.max(0, this.maxConcurrentJobs - this.activeJobs),
+    };
   }
 
   /**
@@ -109,15 +133,15 @@ export class JobStore {
    * @returns Promise that resolves when all tasks are complete
    */
   async waitForCompletion(): Promise<void> {
-    if (!this.isRunning) {
+    if (this.activeJobs === 0) {
       return; // No tasks running, can shutdown immediately
     }
 
-    console.log('Waiting for ongoing tasks to complete...');
+    console.log(`Waiting for ${this.activeJobs} ongoing task(s) to complete...`);
     
     return new Promise<void>((resolve) => {
       const checkCompletion = () => {
-        if (!this.isRunning) {
+        if (this.activeJobs === 0) {
           console.log('All tasks completed successfully');
           resolve();
         } else {

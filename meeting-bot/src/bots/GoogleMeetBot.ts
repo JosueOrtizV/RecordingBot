@@ -68,8 +68,9 @@ export class GoogleMeetBot extends MeetBotBase {
         const context = this.page?.context();
         const browser = context?.browser();
         if (isExternalBrowserContext(context)) {
-          await this.page?.close();
-          this._logger.info('External browser page closed in join finally');
+          await this.page?.close().catch(() => {});
+          await context?.close().catch(() => {});
+          this._logger.info('External browser page and context closed in join finally');
         } else if (browser?.isConnected()) {
           await browser.close();
           this._logger.info('Browser closed in join finally');

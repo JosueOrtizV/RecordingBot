@@ -11,7 +11,7 @@ export const JoinMeetingPage: React.FC = () => {
 
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
-  const [mode, setMode] = useState<'video' | 'audio' | 'transcript_only'>('video');
+  const [mode, setMode] = useState<'video' | 'audio' | 'transcript_only'>('audio');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string; botId?: string } | null>(null);
   const [workerStatus, setWorkerStatus] = useState<WorkerStatus | null>(null);
@@ -24,12 +24,15 @@ export const JoinMeetingPage: React.FC = () => {
     if (titleParam) setTitle(titleParam);
   }, [searchParams]);
 
-  // Sync default mode with user settings
+  // Sync default mode with user settings (defaults to audio if not set)
   useEffect(() => {
     if (settings) {
       if (settings.enable_video) setMode('video');
       else if (settings.enable_audio) setMode('audio');
-      else setMode('transcript_only');
+      else if (settings.enable_transcription) setMode('transcript_only');
+      else setMode('audio');
+    } else {
+      setMode('audio');
     }
   }, [settings]);
 

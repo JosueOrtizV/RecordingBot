@@ -37,6 +37,20 @@ router.post('/join', requireAuth, async (req: Request, res: Response) => {
 
     const mode = recordingMode || (settings.enable_video ? 'video' : (settings.enable_audio ? 'audio' : 'transcript_only'));
     const title = meetingTitle?.trim() || 'Reunión On-Demand (Panel)';
+
+    // Check server capacity before enqueuing
+    const maxConcurrent = process.env.MAX_CONCURRENT_JOBS ? Number(process.env.MAX_CONCURRENT_JOBS) : 4;
+    const activeRes = await query(
+      `SELECT COUNT(*) as count FROM recordings WHERE status IN ('pending', 'recording')`
+    );
+    const totalActive = parseInt(activeRes.rows[0]?.count || '0', 10);
+    if (totalActive >= maxConcurrent + 6) {
+      res.status(429).json({
+        error: 'El servidor se encuentra a máxima capacidad en este momento. Por favor espera a que concluyan algunas reuniones antes de despachar más bots.',
+      });
+      return;
+    }
+
     const botId = uuidv4();
     const eventId = `manual_${botId.substring(0, 8)}`;
 
@@ -112,15 +126,17 @@ router.get('/status', requireAuth, async (req: Request, res: Response) => {
     const availableVideoSlots = Math.max(0, videoCount < 2 && loadPercentage <= 55 ? (2 - videoCount) : 0);
     const availableAudioSlots = Math.max(0, Math.floor((100 - loadPercentage) / 15));
 
+    const maxConcurrent = process.env.MAX_CONCURRENT_JOBS ? Number(process.env.MAX_CONCURRENT_JOBS) : 4;
+
     let statusLabel = 'Óptima';
     if (loadPercentage >= 90) statusLabel = 'Capacidad Máxima';
     else if (loadPercentage >= 50) statusLabel = 'Moderada';
 
     res.json({
       workers: {
-        total: 2,
+        total: maxConcurrent,
         active: allActiveRows.length,
-        idle: Math.max(0, 2 - allActiveRows.length),
+        idle: Math.max(0, maxConcurrent - allActiveRows.length),
       },
       capacity: {
         loadPercentage,
@@ -128,9 +144,9 @@ router.get('/status', requireAuth, async (req: Request, res: Response) => {
         audioCount,
         textCount,
         maxVideo: 2,
-        maxAudio: 6,
+        maxAudio: maxConcurrent,
         availableVideoSlots,
-        availableAudioSlots,
+        availableAudioSlots: Math.min(availableAudioSlots, Math.max(0, maxConcurrent - allActiveRows.length)),
         statusLabel,
       },
       queue: stats,

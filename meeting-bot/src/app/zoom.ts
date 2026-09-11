@@ -81,7 +81,7 @@ const joinZoom = async (req: Request, res: Response) => {
     if (!jobResult.accepted) {
       return res.status(409).json({
         success: false,
-        error: 'Another meeting is currently being processed. Please try again later.',
+        error: 'All concurrent recording slots are currently busy. Please try again later.',
         data: { userId, teamId, eventId, botId }
       });
     }

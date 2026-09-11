@@ -61,7 +61,7 @@ export const SettingsPage: React.FC = () => {
 
   // Form states
   const [botDisplayName, setBotDisplayName] = useState(user?.botDisplayName || "Josue's Notetaker");
-  const [enableVideo, setEnableVideo] = useState(settings?.enable_video ?? true);
+  const [enableVideo, setEnableVideo] = useState(settings?.enable_video ?? false);
   const [enableAudio, setEnableAudio] = useState(settings?.enable_audio ?? true);
   const [enableTranscription, setEnableTranscription] = useState(settings?.enable_transcription ?? true);
   const [driveFolder, setDriveFolder] = useState(settings?.drive_folder_name || 'RecordingBot');

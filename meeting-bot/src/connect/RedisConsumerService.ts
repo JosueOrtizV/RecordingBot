@@ -16,7 +16,8 @@ export class RedisConsumerService {
   private _isShutdownRequested: boolean = false;
   private reconnectInterval: NodeJS.Timeout | null = null;
   private readonly RECONNECT_DELAY = 5000; // 5 seconds
-  private readonly QUEUE_BLOCK_TIMEOUT_SECONDS = 10;
+  private readonly QUEUE_BLOCK_TIMEOUT_SECONDS = 5;
+  private readonly BUSY_WAIT_DELAY_MS = 2000; // 2 seconds when all slots full
 
   async start(): Promise<void> {
     if (this._isRunning) {
@@ -76,16 +77,18 @@ export class RedisConsumerService {
       try {
         // Check JobStore availability BEFORE attempting to get messages
         if (globalJobStore.isBusy()) {
-          // JobStore is busy, wait a bit before checking again
-          await new Promise(resolve => setTimeout(resolve, this.QUEUE_BLOCK_TIMEOUT_SECONDS * 1000));
+          // All concurrent slots are busy, wait briefly before checking again
+          await new Promise(resolve => setTimeout(resolve, this.BUSY_WAIT_DELAY_MS));
           continue; // Skip to next iteration
         }
 
-        // JobStore is available, now we can safely get a message
+        // JobStore has capacity, now we can safely pull a message
         const result = await messageBroker.getMeetingbotJobsWithTimeout(this.QUEUE_BLOCK_TIMEOUT_SECONDS);
 
         if (result && result.element) {
           await this.processMessage(result.element);
+          // Brief pause after job dispatch to let state settle
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
 
       } catch (error) {

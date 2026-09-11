@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- 2. Configuración de grabación por usuario
 CREATE TABLE IF NOT EXISTS user_settings (
     user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    enable_video BOOLEAN DEFAULT true,
+    enable_video BOOLEAN DEFAULT false,
     enable_audio BOOLEAN DEFAULT true,
     enable_transcription BOOLEAN DEFAULT true,
     drive_folder_name VARCHAR(255) DEFAULT 'RecordingBot',
