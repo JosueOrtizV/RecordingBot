@@ -12,8 +12,14 @@ router.get('/upcoming', requireAuth, async (req: Request, res: Response) => {
     
     // Check if we have meetings in DB for the past 30 days and upcoming 60 days
     const dbRes = await query(
-      `SELECT sm.*, mb.reason as block_reason, mb.id as block_rule_id,
-              CASE WHEN mb.id IS NOT NULL THEN false ELSE sm.will_record END as will_record
+      `SELECT sm.*, 
+              CASE WHEN sm.manual_override = true THEN NULL ELSE mb.reason END as block_reason,
+              CASE WHEN sm.manual_override = true THEN NULL ELSE mb.id END as block_rule_id,
+              CASE 
+                WHEN sm.manual_override IS NOT NULL THEN sm.manual_override
+                WHEN mb.id IS NOT NULL THEN false 
+                ELSE sm.will_record 
+              END as will_record
        FROM scheduled_meetings sm
        LEFT JOIN meeting_blocklist mb ON mb.user_id = sm.user_id AND (
          (mb.match_type = 'url' AND sm.meet_url ILIKE '%' || mb.match_value || '%') OR
@@ -50,8 +56,14 @@ router.post('/refresh', requireAuth, async (req: Request, res: Response) => {
     
     // Return all meetings with blocklist joined
     const dbRes = await query(
-      `SELECT sm.*, mb.reason as block_reason, mb.id as block_rule_id,
-              CASE WHEN mb.id IS NOT NULL THEN false ELSE sm.will_record END as will_record
+      `SELECT sm.*, 
+              CASE WHEN sm.manual_override = true THEN NULL ELSE mb.reason END as block_reason,
+              CASE WHEN sm.manual_override = true THEN NULL ELSE mb.id END as block_rule_id,
+              CASE 
+                WHEN sm.manual_override IS NOT NULL THEN sm.manual_override
+                WHEN mb.id IS NOT NULL THEN false 
+                ELSE sm.will_record 
+              END as will_record
        FROM scheduled_meetings sm
        LEFT JOIN meeting_blocklist mb ON mb.user_id = sm.user_id AND (
          (mb.match_type = 'url' AND sm.meet_url ILIKE '%' || mb.match_value || '%') OR
@@ -102,15 +114,15 @@ router.put('/toggle-record/:id', requireAuth, async (req: Request, res: Response
           [userId, type, val, `Excluido desde calendario: "${val}"`]
         );
 
-        // Update all matching meetings
+        // Update all matching meetings and reset individual manual_override
         if (type === 'title_contains') {
           await query(
-            `UPDATE scheduled_meetings SET will_record = false, updated_at = NOW() WHERE user_id = $1 AND title ILIKE '%' || $2 || '%'`,
+            `UPDATE scheduled_meetings SET will_record = false, manual_override = NULL, updated_at = NOW() WHERE user_id = $1 AND title ILIKE '%' || $2 || '%'`,
             [userId, val]
           );
         } else if (type === 'url') {
           await query(
-            `UPDATE scheduled_meetings SET will_record = false, updated_at = NOW() WHERE user_id = $1 AND meet_url ILIKE '%' || $2 || '%'`,
+            `UPDATE scheduled_meetings SET will_record = false, manual_override = NULL, updated_at = NOW() WHERE user_id = $1 AND meet_url ILIKE '%' || $2 || '%'`,
             [userId, val]
           );
         }
@@ -122,7 +134,7 @@ router.put('/toggle-record/:id', requireAuth, async (req: Request, res: Response
             [userId, val]
           );
           await query(
-            `UPDATE scheduled_meetings SET will_record = true, updated_at = NOW() WHERE user_id = $1 AND title ILIKE '%' || $2 || '%'`,
+            `UPDATE scheduled_meetings SET will_record = true, manual_override = NULL, updated_at = NOW() WHERE user_id = $1 AND title ILIKE '%' || $2 || '%'`,
             [userId, val]
           );
         } else if (type === 'url') {
@@ -131,7 +143,7 @@ router.put('/toggle-record/:id', requireAuth, async (req: Request, res: Response
             [userId, val]
           );
           await query(
-            `UPDATE scheduled_meetings SET will_record = true, updated_at = NOW() WHERE user_id = $1 AND meet_url ILIKE '%' || $2 || '%'`,
+            `UPDATE scheduled_meetings SET will_record = true, manual_override = NULL, updated_at = NOW() WHERE user_id = $1 AND meet_url ILIKE '%' || $2 || '%'`,
             [userId, val]
           );
         }
@@ -145,10 +157,10 @@ router.put('/toggle-record/:id', requireAuth, async (req: Request, res: Response
       return;
     }
 
-    // Default: Single instance toggle
+    // Default: Single instance toggle - sets manual_override so it won't be overwritten by poller or series rule
     const updateRes = await query(
       `UPDATE scheduled_meetings
-       SET will_record = $1, updated_at = NOW()
+       SET will_record = $1, manual_override = $1, updated_at = NOW()
        WHERE id = $2 AND user_id = $3
        RETURNING *`,
       [Boolean(willRecord), meetingId, userId]

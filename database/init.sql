@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS scheduled_meetings (
     start_time TIMESTAMPTZ NOT NULL,
     end_time TIMESTAMPTZ NOT NULL,
     will_record BOOLEAN DEFAULT true,      -- false si está en blocklist o deshabilitado
+    manual_override BOOLEAN DEFAULT NULL,  -- true/false si el usuario lo forzó manualmente (prevalece sobre blocklist)
     recording_mode VARCHAR(20) DEFAULT 'video',
     dedup_group_id UUID,                   -- mismo ID = misma reunión, no duplicar bots
     dispatched BOOLEAN DEFAULT false,

@@ -131,20 +131,20 @@ router.post('/blocklist', requireAuth, async (req: Request, res: Response) => {
       [userId, matchType, val, reason || null]
     );
 
-    // Immediately pause all matching scheduled meetings
+    // Immediately pause all matching scheduled meetings and reset manual_override
     if (matchType === 'title_contains') {
       await query(
-        `UPDATE scheduled_meetings SET will_record = false, updated_at = NOW() WHERE user_id = $1 AND title ILIKE '%' || $2 || '%'`,
+        `UPDATE scheduled_meetings SET will_record = false, manual_override = NULL, updated_at = NOW() WHERE user_id = $1 AND title ILIKE '%' || $2 || '%'`,
         [userId, val]
       );
     } else if (matchType === 'url') {
       await query(
-        `UPDATE scheduled_meetings SET will_record = false, updated_at = NOW() WHERE user_id = $1 AND meet_url ILIKE '%' || $2 || '%'`,
+        `UPDATE scheduled_meetings SET will_record = false, manual_override = NULL, updated_at = NOW() WHERE user_id = $1 AND meet_url ILIKE '%' || $2 || '%'`,
         [userId, val]
       );
     } else if (matchType === 'event_id') {
       await query(
-        `UPDATE scheduled_meetings SET will_record = false, updated_at = NOW() WHERE user_id = $1 AND calendar_event_id = $2`,
+        `UPDATE scheduled_meetings SET will_record = false, manual_override = NULL, updated_at = NOW() WHERE user_id = $1 AND calendar_event_id = $2`,
         [userId, val]
       );
     }
@@ -174,30 +174,30 @@ router.delete('/blocklist/:id', requireAuth, async (req: Request, res: Response)
 
     await query('DELETE FROM meeting_blocklist WHERE id = $1 AND user_id = $2', [id, userId]);
 
-    // Reactivate meetings that matched this deleted rule
+    // Reactivate meetings that matched this deleted rule and reset manual_override
     if (rule.match_type === 'title_contains') {
       await query(
-        `UPDATE scheduled_meetings SET will_record = true, updated_at = NOW() WHERE user_id = $1 AND title ILIKE '%' || $2 || '%'`,
+        `UPDATE scheduled_meetings SET will_record = true, manual_override = NULL, updated_at = NOW() WHERE user_id = $1 AND title ILIKE '%' || $2 || '%'`,
         [userId, rule.match_value]
       );
     } else if (rule.match_type === 'url') {
       await query(
-        `UPDATE scheduled_meetings SET will_record = true, updated_at = NOW() WHERE user_id = $1 AND meet_url ILIKE '%' || $2 || '%'`,
+        `UPDATE scheduled_meetings SET will_record = true, manual_override = NULL, updated_at = NOW() WHERE user_id = $1 AND meet_url ILIKE '%' || $2 || '%'`,
         [userId, rule.match_value]
       );
     } else if (rule.match_type === 'event_id') {
       await query(
-        `UPDATE scheduled_meetings SET will_record = true, updated_at = NOW() WHERE user_id = $1 AND calendar_event_id = $2`,
+        `UPDATE scheduled_meetings SET will_record = true, manual_override = NULL, updated_at = NOW() WHERE user_id = $1 AND calendar_event_id = $2`,
         [userId, rule.match_value]
       );
     }
 
-    // Re-apply any remaining blocklist rules to maintain full consistency
+    // Re-apply any remaining blocklist rules to maintain full consistency (only where no manual override)
     await query(
       `UPDATE scheduled_meetings sm
        SET will_record = false, updated_at = NOW()
        FROM meeting_blocklist mb
-       WHERE sm.user_id = $1 AND mb.user_id = $1 AND (
+       WHERE sm.user_id = $1 AND mb.user_id = $1 AND sm.manual_override IS NULL AND (
          (mb.match_type = 'url' AND sm.meet_url ILIKE '%' || mb.match_value || '%') OR
          (mb.match_type = 'title_contains' AND sm.title ILIKE '%' || mb.match_value || '%') OR
          (mb.match_type = 'event_id' AND sm.calendar_event_id = mb.match_value)

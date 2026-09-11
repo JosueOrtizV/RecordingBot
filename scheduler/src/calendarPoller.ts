@@ -138,8 +138,9 @@ export async function pollCalendar(): Promise<void> {
         const willRecord = !blockCheck.blocked && (user.auto_join !== false);
 
         // Sync to scheduled_meetings in DB
+        let effectiveWillRecord = willRecord;
         try {
-          await query(
+          const upsertRes = await query(
             `INSERT INTO scheduled_meetings (user_id, calendar_event_id, title, meet_url, start_time, end_time, will_record, updated_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
              ON CONFLICT (user_id, calendar_event_id) DO UPDATE SET
@@ -147,15 +148,22 @@ export async function pollCalendar(): Promise<void> {
                meet_url = EXCLUDED.meet_url,
                start_time = EXCLUDED.start_time,
                end_time = EXCLUDED.end_time,
-               will_record = EXCLUDED.will_record,
-               updated_at = NOW()`,
+               will_record = CASE 
+                 WHEN scheduled_meetings.manual_override IS NOT NULL THEN scheduled_meetings.manual_override 
+                 ELSE EXCLUDED.will_record 
+               END,
+               updated_at = NOW()
+             RETURNING will_record`,
             [user.id, event.id, title, meetUrl, startTime, endTime, willRecord]
           );
+          if (upsertRes.rows.length > 0) {
+            effectiveWillRecord = upsertRes.rows[0].will_record;
+          }
         } catch (syncErr) {
           logger.warn('Failed to upsert scheduled meeting in DB:', syncErr);
         }
 
-        if (!willRecord) {
+        if (!effectiveWillRecord) {
           logger.debug(`Meeting "${title}" for ${user.email} is blocked or auto-join is disabled.`);
           continue;
         }

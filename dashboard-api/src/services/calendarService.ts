@@ -90,7 +90,10 @@ export async function syncUserCalendar(userId: string, customMin?: Date, customM
          meet_url = EXCLUDED.meet_url,
          start_time = EXCLUDED.start_time,
          end_time = EXCLUDED.end_time,
-         will_record = EXCLUDED.will_record,
+         will_record = CASE 
+           WHEN scheduled_meetings.manual_override IS NOT NULL THEN scheduled_meetings.manual_override 
+           ELSE EXCLUDED.will_record 
+         END,
          updated_at = NOW()
        RETURNING *`,
       [userId, eventId, title, meetUrl, startTime, endTime, willRecord]
