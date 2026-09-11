@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../api/client';
 import { ScheduledMeeting } from '../types';
@@ -152,6 +153,24 @@ export const CalendarPage: React.FC = () => {
   const [agendaFilter, setAgendaFilter] = useState<AgendaFilter>('week');
   const [selectedMeeting, setSelectedMeeting] = useState<ScheduledMeeting | null>(null);
   const [modalMode, setModalMode] = useState<'details' | 'scope_choice'>('details');
+
+  // Close modal on Escape key & lock body scroll
+  useEffect(() => {
+    if (!selectedMeeting) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedMeeting(null);
+        setModalMode('details');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [selectedMeeting]);
 
   const navigate = useNavigate();
 
@@ -975,14 +994,15 @@ export const CalendarPage: React.FC = () => {
       </div>
 
       {/* Unified Meeting Modal (Details & Scope Switcher) */}
-      {selectedMeeting && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in"
-          onClick={() => {
-            setSelectedMeeting(null);
-            setModalMode('details');
-          }}
-        >
+      {selectedMeeting &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200"
+            onClick={() => {
+              setSelectedMeeting(null);
+              setModalMode('details');
+            }}
+          >
           <div
             className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-lg rounded-3xl p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150 transition-colors"
             onClick={(e) => e.stopPropagation()}
@@ -1209,7 +1229,8 @@ export const CalendarPage: React.FC = () => {
               </>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

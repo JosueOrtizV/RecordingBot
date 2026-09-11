@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Copy, Download, Check, FileText, Users, MessageSquare, X } from 'lucide-react';
+import { Search, Copy, Download, Check, FileText, Users, MessageSquare, X, Maximize2 } from 'lucide-react';
+import { TranscriptModal } from './TranscriptModal';
 
 interface TranscriptViewProps {
   transcript: string | null | undefined;
   meetingTitle?: string;
   recordingId?: string;
+  onOpenModal?: () => void;
 }
 
 interface SpeakerBlock {
@@ -69,7 +71,10 @@ const SPEAKER_PALETTES = [
 export const TranscriptView: React.FC<TranscriptViewProps> = ({
   transcript,
   meetingTitle,
+  recordingId,
+  onOpenModal,
 }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSpeaker, setSelectedSpeaker] = useState<string>('all');
   const [copied, setCopied] = useState(false);
@@ -250,10 +255,19 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          {/* Small icon-only button to open modal as in dashboard */}
+          <button
+            onClick={() => (onOpenModal ? onOpenModal() : setIsModalOpen(true))}
+            className="p-1.5 sm:p-2 rounded-xl bg-sky-50 dark:bg-sky-950/50 hover:bg-sky-100 dark:hover:bg-sky-900/60 text-sky-600 dark:text-sky-400 transition-all active:scale-95 border border-sky-200/80 dark:border-sky-800/80 cursor-pointer shadow-2xs"
+            title="Abrir transcripción en ventana modal"
+          >
+            <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          </button>
+
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-all active:scale-95 border border-slate-200/60 dark:border-slate-700/60"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-all active:scale-95 border border-slate-200/60 dark:border-slate-700/60 cursor-pointer"
             title="Copiar texto completo"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -262,7 +276,7 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
 
           <button
             onClick={handleDownload}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all active:scale-95 shadow-sm shadow-indigo-600/30"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all active:scale-95 shadow-sm shadow-indigo-600/30 cursor-pointer"
             title="Descargar minuta en archivo de texto"
           >
             <Download className="w-3.5 h-3.5" />
@@ -374,6 +388,16 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
           })
         )}
       </div>
+
+      {/* Transcript Modal (Dashboard-style fallback) */}
+      {isModalOpen && !onOpenModal && (
+        <TranscriptModal
+          recordingId={recordingId || 'view'}
+          title={meetingTitle || 'Transcripción'}
+          transcript={transcript || null}
+          onClose={() => setIsModalOpen(false)}
+        />
+      )}
     </div>
   );
 };

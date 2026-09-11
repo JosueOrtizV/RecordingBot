@@ -4,7 +4,6 @@ import { useAuth } from '../context/AuthContext';
 import { fetchApi } from '../api/client';
 import { ScheduledMeeting, Recording } from '../types';
 import { Video, Calendar, Disc, ExternalLink, FileText, ArrowRight, Clock, HardDrive, Sparkles, Bot } from 'lucide-react';
-import { TranscriptModal } from '../components/TranscriptModal';
 import { startOfWeek, endOfWeek, isToday } from 'date-fns';
 
 export const DashboardPage: React.FC = () => {
@@ -13,11 +12,6 @@ export const DashboardPage: React.FC = () => {
   const [upcoming, setUpcoming] = useState<ScheduledMeeting[]>([]);
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Transcript modal state
-  const [selectedRecordingId, setSelectedRecordingId] = useState<string | null>(null);
-  const [selectedTitle, setSelectedTitle] = useState<string>('');
-  const [selectedTranscript, setSelectedTranscript] = useState<string | null>(null);
 
   const loadData = async () => {
     try {
@@ -59,17 +53,6 @@ export const DashboardPage: React.FC = () => {
     return `https://drive.google.com/drive/search?q=${encodeURIComponent(folderName)}`;
   }, [settings]);
 
-  const openTranscript = async (id: string, title: string) => {
-    setSelectedRecordingId(id);
-    setSelectedTitle(title);
-    setSelectedTranscript(null);
-    try {
-      const data = await fetchApi<{ transcript: string }>(`/api/recordings/${id}/transcript`);
-      setSelectedTranscript(data.transcript);
-    } catch (err: any) {
-      setSelectedTranscript('No se pudo cargar la transcripción: ' + err.message);
-    }
-  };
 
   const formatDuration = (seconds?: number) => {
     if (!seconds) return '0s';
@@ -274,9 +257,12 @@ export const DashboardPage: React.FC = () => {
                   className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between gap-3 text-xs transition-colors"
                 >
                   <div className="truncate">
-                    <p className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                    <Link
+                      to={`/recordings/${rec.id}`}
+                      className="font-semibold text-slate-900 dark:text-slate-100 truncate hover:text-sky-600 dark:hover:text-sky-400 transition-colors block"
+                    >
                       {rec.meeting_title || 'Reunión'}
-                    </p>
+                    </Link>
                     <p className="text-slate-500 dark:text-slate-400 text-[11px] flex items-center gap-2 mt-0.5">
                       <span>{new Date(rec.created_at).toLocaleDateString('es-MX', { month: 'short', day: 'numeric' })}</span>
                       <span>•</span>
@@ -288,15 +274,13 @@ export const DashboardPage: React.FC = () => {
                   </div>
 
                   <div className="flex items-center gap-1.5 shrink-0">
-                    {rec.has_transcript && (
-                      <button
-                        onClick={() => openTranscript(rec.id, rec.meeting_title)}
-                        title="Ver Transcripción"
-                        className="p-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-sky-600 dark:text-sky-400 transition-colors"
-                      >
-                        <FileText className="w-4 h-4" />
-                      </button>
-                    )}
+                    <Link
+                      to={`/recordings/${rec.id}`}
+                      title="Ver grabación y transcripción"
+                      className="p-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-sky-600 dark:text-sky-400 transition-colors"
+                    >
+                      <FileText className="w-4 h-4" />
+                    </Link>
 
                     {rec.drive_url && (
                       <a
@@ -316,14 +300,6 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* Transcript Viewer Modal */}
-      <TranscriptModal
-        recordingId={selectedRecordingId}
-        title={selectedTitle}
-        transcript={selectedTranscript}
-        onClose={() => setSelectedRecordingId(null)}
-      />
     </div>
   );
 };

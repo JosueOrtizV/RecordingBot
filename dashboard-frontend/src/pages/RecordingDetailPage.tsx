@@ -27,6 +27,7 @@ import { TranscriptView } from '../components/TranscriptView';
 import { MinutesView } from '../components/MinutesView';
 import { ShareModal } from '../components/ShareModal';
 import { StopRecordingModal } from '../components/StopRecordingModal';
+import { TranscriptModal } from '../components/TranscriptModal';
 import { Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -40,6 +41,7 @@ export const RecordingDetailPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [stopModalOpen, setStopModalOpen] = useState(false);
+  const [transcriptModalOpen, setTranscriptModalOpen] = useState(false);
   const [activeMobileTab, setActiveMobileTab] = useState<'media' | 'transcript' | 'minutes'>('media');
   const [rightColumnTab, setRightColumnTab] = useState<'transcript' | 'minutes'>('minutes');
 
@@ -492,6 +494,7 @@ export const RecordingDetailPage: React.FC = () => {
                 transcript={recording.transcript_text}
                 meetingTitle={recording.meeting_title}
                 recordingId={recording.id}
+                onOpenModal={() => setTranscriptModalOpen(true)}
               />
             )}
           </div>
@@ -525,6 +528,16 @@ export const RecordingDetailPage: React.FC = () => {
           );
         }}
       />
+
+      {/* Transcript Modal (Dashboard-style) */}
+      {transcriptModalOpen && (
+        <TranscriptModal
+          recordingId={recording.id}
+          title={recording.meeting_title}
+          transcript={recording.transcript_text || null}
+          onClose={() => setTranscriptModalOpen(false)}
+        />
+      )}
     </div>
   );
 };

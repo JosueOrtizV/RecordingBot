@@ -1,11 +1,12 @@
-﻿import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Copy, Download, Check, FileText } from 'lucide-react';
 import { API_BASE } from '../api/client';
 
 interface TranscriptModalProps {
   recordingId: string | null;
   title: string;
-  transcript: string | null;
+  transcript: string | null | undefined;
   onClose: () => void;
 }
 
@@ -16,6 +17,23 @@ export const TranscriptModal: React.FC<TranscriptModalProps> = ({
   onClose,
 }) => {
   const [copied, setCopied] = useState(false);
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!recordingId) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [recordingId, onClose]);
 
   if (!recordingId) return null;
 
@@ -30,9 +48,15 @@ export const TranscriptModal: React.FC<TranscriptModalProps> = ({
     window.open(`${API_BASE}/api/recordings/${recordingId}/transcript?download=true`, '_blank');
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-3xl rounded-3xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden transition-colors">
+  return createPortal(
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-3xl rounded-3xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden transition-colors"
+      >
         {/* Header */}
         <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-900/80">
           <div className="flex items-center gap-3">
@@ -101,6 +125,7 @@ export const TranscriptModal: React.FC<TranscriptModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

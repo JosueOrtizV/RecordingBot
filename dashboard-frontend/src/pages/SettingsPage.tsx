@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import { fetchApi } from '../api/client';
 import { BlocklistItem } from '../types';
@@ -72,6 +73,23 @@ export const SettingsPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [showTelegramHelp, setShowTelegramHelp] = useState(false);
+
+  // Close telegram help modal on Escape & lock body scroll
+  useEffect(() => {
+    if (!showTelegramHelp) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowTelegramHelp(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [showTelegramHelp]);
 
   // Blocklist states
   const [blocklist, setBlocklist] = useState<BlocklistItem[]>([]);
@@ -497,113 +515,121 @@ export const SettingsPage: React.FC = () => {
       </div>
 
       {/* Telegram Help Modal */}
-      {showTelegramHelp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5 animate-in zoom-in-95 duration-150">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-2xl bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
-                  <Send className="w-6 h-6" />
+      {showTelegramHelp &&
+        createPortal(
+          <div
+            onClick={() => setShowTelegramHelp(false)}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-5 animate-in zoom-in-95 duration-150"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 rounded-2xl bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
+                    <Send className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                      Configurar Alertas de Telegram
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Paso a paso para recibir alertas personales en tu Telegram.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                    Configurar Alertas de Telegram
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Paso a paso para recibir alertas personales en tu Telegram.
-                  </p>
+                <button
+                  onClick={() => setShowTelegramHelp(false)}
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Steps list */}
+              <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 flex items-start gap-3">
+                  <span className="w-6 h-6 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 font-bold text-xs flex items-center justify-center shrink-0 border border-sky-500/20">
+                    1
+                  </span>
+                  <div className="space-y-1">
+                    <p className="font-semibold text-slate-900 dark:text-slate-100">
+                      Abre el bot de información en Telegram
+                    </p>
+                    <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+                      Entra a Telegram y busca{' '}
+                      <a
+                        href="https://t.me/userinfobot"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sky-600 dark:text-sky-400 font-semibold underline"
+                      >
+                        @userinfobot
+                      </a>{' '}
+                      (o también{' '}
+                      <a
+                        href="https://t.me/raw_data_bot"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sky-600 dark:text-sky-400 font-semibold underline"
+                      >
+                        @raw_data_bot
+                      </a>
+                      ) y pulsa <strong>Iniciar</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 flex items-start gap-3">
+                  <span className="w-6 h-6 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold text-xs flex items-center justify-center shrink-0 border border-indigo-500/20">
+                    2
+                  </span>
+                  <div className="space-y-1">
+                    <p className="font-semibold text-slate-900 dark:text-slate-100">
+                      Copia tu número de Id
+                    </p>
+                    <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+                      El bot te enviará un mensaje con tu información personal. Copia el número de la línea <strong>Id:</strong> (ej. <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded font-mono text-[10px]">123456789</code>).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 flex items-start gap-3">
+                  <span className="w-6 h-6 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs flex items-center justify-center shrink-0 border border-emerald-500/20">
+                    3
+                  </span>
+                  <div className="space-y-1">
+                    <p className="font-semibold text-slate-900 dark:text-slate-100">
+                      Pégalo en el panel y guarda
+                    </p>
+                    <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
+                      Pega ese número en el campo <strong>Telegram Chat ID</strong> y haz clic en <strong>Guardar Preferencias</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-[11px] flex items-start gap-2">
+                  <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Nota:</strong> Este campo es totalmente opcional. Si no lo configuras, el bot funcionará con normalidad y solo registrará la actividad en logs sin enviar mensajes a Telegram.
+                  </span>
                 </div>
               </div>
-              <button
-                onClick={() => setShowTelegramHelp(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTelegramHelp(false)}
+                  className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded-2xl shadow-md shadow-sky-600/20 transition-all cursor-pointer"
+                >
+                  Entendido
+                </button>
+              </div>
             </div>
-
-            {/* Steps list */}
-            <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 flex items-start gap-3">
-                <span className="w-6 h-6 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 font-bold text-xs flex items-center justify-center shrink-0 border border-sky-500/20">
-                  1
-                </span>
-                <div className="space-y-1">
-                  <p className="font-semibold text-slate-900 dark:text-slate-100">
-                    Abre el bot de información en Telegram
-                  </p>
-                  <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
-                    Entra a Telegram y busca{' '}
-                    <a
-                      href="https://t.me/userinfobot"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-sky-600 dark:text-sky-400 font-semibold underline"
-                    >
-                      @userinfobot
-                    </a>{' '}
-                    (o también{' '}
-                    <a
-                      href="https://t.me/raw_data_bot"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-sky-600 dark:text-sky-400 font-semibold underline"
-                    >
-                      @raw_data_bot
-                    </a>
-                    ) y pulsa <strong>Iniciar</strong>.
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 flex items-start gap-3">
-                <span className="w-6 h-6 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold text-xs flex items-center justify-center shrink-0 border border-indigo-500/20">
-                  2
-                </span>
-                <div className="space-y-1">
-                  <p className="font-semibold text-slate-900 dark:text-slate-100">
-                    Copia tu número de Id
-                  </p>
-                  <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
-                    El bot te enviará un mensaje con tu información personal. Copia el número de la línea <strong>Id:</strong> (ej. <code className="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded font-mono text-[10px]">123456789</code>).
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 flex items-start gap-3">
-                <span className="w-6 h-6 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs flex items-center justify-center shrink-0 border border-emerald-500/20">
-                  3
-                </span>
-                <div className="space-y-1">
-                  <p className="font-semibold text-slate-900 dark:text-slate-100">
-                    Pégalo en el panel y guarda
-                  </p>
-                  <p className="text-slate-500 dark:text-slate-400 text-[11px] leading-relaxed">
-                    Pega ese número en el campo <strong>Telegram Chat ID</strong> y haz clic en <strong>Guardar Preferencias</strong>.
-                  </p>
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-[11px] flex items-start gap-2">
-                <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>
-                  <strong>Nota:</strong> Este campo es totalmente opcional. Si no lo configuras, el bot funcionará con normalidad y solo registrará la actividad en logs sin enviar mensajes a Telegram.
-                </span>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => setShowTelegramHelp(false)}
-                className="px-5 py-2.5 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded-2xl shadow-md shadow-sky-600/20 transition-all cursor-pointer"
-              >
-                Entendido
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 };
