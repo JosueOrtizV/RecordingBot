@@ -5,6 +5,7 @@ import { fetchApi } from '../api/client';
 import { ScheduledMeeting, Recording } from '../types';
 import { Video, Calendar, Disc, ExternalLink, FileText, ArrowRight, Clock, HardDrive, Sparkles, Bot } from 'lucide-react';
 import { startOfWeek, endOfWeek, isToday } from 'date-fns';
+import { RecordingCardMobile } from '../components/RecordingCardMobile';
 
 export const DashboardPage: React.FC = () => {
   const { user, settings } = useAuth();
@@ -251,51 +252,63 @@ export const DashboardPage: React.FC = () => {
                 <p className="text-xs text-slate-500 dark:text-slate-400">Aún no tienes grabaciones registradas.</p>
               </div>
             ) : (
-              recordings.map((rec) => (
-                <div
-                  key={rec.id}
-                  className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between gap-3 text-xs transition-colors"
-                >
-                  <div className="truncate">
-                    <Link
-                      to={`/recordings/${rec.id}`}
-                      className="font-semibold text-slate-900 dark:text-slate-100 truncate hover:text-sky-600 dark:hover:text-sky-400 transition-colors block"
-                    >
-                      {rec.meeting_title || 'Reunión'}
-                    </Link>
-                    <p className="text-slate-500 dark:text-slate-400 text-[11px] flex items-center gap-2 mt-0.5">
-                      <span>{new Date(rec.created_at).toLocaleDateString('es-MX', { month: 'short', day: 'numeric' })}</span>
-                      <span>•</span>
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-slate-400" />
-                        {formatDuration(rec.duration_seconds)}
-                      </span>
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <Link
-                      to={`/recordings/${rec.id}`}
-                      title="Ver grabación y transcripción"
-                      className="p-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-sky-600 dark:text-sky-400 transition-colors"
-                    >
-                      <FileText className="w-4 h-4" />
-                    </Link>
-
-                    {rec.drive_url && (
-                      <a
-                        href={rec.drive_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        title="Abrir en Google Drive"
-                        className="p-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-emerald-600 dark:text-emerald-400 transition-colors"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                      </a>
-                    )}
-                  </div>
+              <>
+                {/* Mobile Accordion View (< sm) */}
+                <div className="sm:hidden space-y-2.5">
+                  {recordings.map((rec) => (
+                    <RecordingCardMobile key={rec.id} recording={rec} />
+                  ))}
                 </div>
-              ))
+
+                {/* Desktop Compact Rows (>= sm) */}
+                <div className="hidden sm:block space-y-2.5">
+                  {recordings.map((rec) => (
+                    <div
+                      key={rec.id}
+                      className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between gap-3 text-xs transition-colors"
+                    >
+                      <div className="truncate">
+                        <Link
+                          to={`/recordings/${rec.id}`}
+                          className="font-semibold text-slate-900 dark:text-slate-100 truncate hover:text-sky-600 dark:hover:text-sky-400 transition-colors block"
+                        >
+                          {rec.meeting_title || 'Reunión'}
+                        </Link>
+                        <p className="text-slate-500 dark:text-slate-400 text-[11px] flex items-center gap-2 mt-0.5">
+                          <span>{new Date(rec.created_at).toLocaleDateString('es-MX', { month: 'short', day: 'numeric' })}</span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-slate-400" />
+                            {formatDuration(rec.duration_seconds)}
+                          </span>
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Link
+                          to={`/recordings/${rec.id}`}
+                          title="Ver grabación y transcripción"
+                          className="p-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-sky-600 dark:text-sky-400 transition-colors"
+                        >
+                          <FileText className="w-4 h-4" />
+                        </Link>
+
+                        {rec.drive_url && (
+                          <a
+                            href={rec.drive_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Abrir en Google Drive"
+                            className="p-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-emerald-600 dark:text-emerald-400 transition-colors"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </div>

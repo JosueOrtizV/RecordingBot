@@ -29,6 +29,7 @@ import {
 import { format, startOfWeek, endOfWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { StopRecordingModal } from '../components/StopRecordingModal';
+import { RecordingCardMobile } from '../components/RecordingCardMobile';
 
 type TimeRangeFilter = 'today' | 'week' | 'month' | 'all';
 type ModeFilter = 'all' | 'video' | 'audio' | 'transcript_only';
@@ -432,8 +433,10 @@ export const RecordingsPage: React.FC = () => {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+          <div className="space-y-4">
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-xs">
               <thead className="text-[11px] uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-200/80 dark:border-slate-800">
                 <tr>
                   <th className="pb-3 font-bold">Reunión</th>
@@ -599,8 +602,22 @@ export const RecordingsPage: React.FC = () => {
                 })}
               </tbody>
             </table>
+          </div>
 
-            {/* Pagination Controls */}
+          {/* Mobile Accordion Cards View (visible only on mobile) */}
+          <div className="md:hidden space-y-3">
+            {recordings.map((rec) => (
+              <RecordingCardMobile
+                key={rec.id}
+                recording={rec}
+                onStop={(r) => setSelectedForStop(r)}
+                onDelete={(id) => deleteRecording(id)}
+                showDelete={true}
+              />
+            ))}
+          </div>
+
+          {/* Pagination Controls */}
             {totalPages > 1 && (
               <div className="flex items-center justify-between pt-5 border-t border-slate-200/80 dark:border-slate-800 text-xs">
                 <span className="text-slate-500 dark:text-slate-400 font-medium">

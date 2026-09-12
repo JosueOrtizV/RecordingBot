@@ -12,25 +12,25 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileMenu }) => {
   const { theme, toggleTheme } = useTheme();
 
   return (
-    <header className="h-16 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between sticky top-0 z-10 transition-colors duration-200">
-      <div className="flex items-center gap-3">
+    <header className="h-14 sm:h-16 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between sticky top-0 z-10 transition-colors duration-200">
+      <div className="flex items-center gap-1.5 sm:gap-3">
         {/* Mobile menu trigger */}
         <button
           onClick={onToggleMobileMenu}
-          className="p-2 -ml-2 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors md:hidden"
+          className="p-1.5 sm:p-2 -ml-1 sm:-ml-2 rounded-xl text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors md:hidden"
           aria-label="Abrir menú"
         >
           <Menu className="w-5 h-5" />
         </button>
 
         {/* Brand Logo & Title */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center shadow-md shadow-sky-500/20 text-white shrink-0">
-            <Radio className="w-5 h-5" />
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center shadow-md shadow-sky-500/20 text-white shrink-0">
+            <Radio className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-extrabold text-slate-900 dark:text-slate-100 text-base sm:text-lg tracking-tight">
+              <span className="font-extrabold text-slate-900 dark:text-slate-100 text-sm sm:text-lg tracking-tight">
                 RecordingBot
               </span>
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 font-mono hidden sm:inline-block">
@@ -45,12 +45,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileMenu }) => {
       </div>
 
       {/* Right Controls */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-2.5">
         {/* Theme Toggle Button */}
         <button
           onClick={toggleTheme}
           title={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
-          className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-slate-200/80 dark:border-slate-800"
+          className="p-1.5 sm:p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors border border-slate-200/80 dark:border-slate-800"
           aria-label="Alternar tema"
         >
           {theme === 'dark' ? (
@@ -63,7 +63,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileMenu }) => {
         {user && (
           <>
             {/* User Profile Chip */}
-            <div className="flex items-center gap-2.5 bg-slate-100/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 px-3 py-1.5 rounded-2xl transition-colors">
+            <div className="flex items-center gap-2 bg-slate-100/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-1 sm:px-3 sm:py-1.5 rounded-full sm:rounded-2xl transition-colors">
               {user.pictureUrl ? (
                 <img
                   src={user.pictureUrl}
@@ -89,7 +89,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileMenu }) => {
             <button
               onClick={logout}
               title="Cerrar sesión"
-              className="p-2 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition-colors border border-transparent hover:border-rose-200 dark:hover:border-rose-900/50"
+              className="p-1.5 sm:p-2 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition-colors border border-transparent hover:border-rose-200 dark:hover:border-rose-900/50"
               aria-label="Cerrar sesión"
             >
               <LogOut className="w-4 h-4" />
