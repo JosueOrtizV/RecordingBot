@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../api/client';
 import { ScheduledMeeting } from '../types';
+import { showToast } from '../utils/swal';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -196,8 +197,9 @@ export const CalendarPage: React.FC = () => {
         method: 'POST',
       });
       setMeetings(data.meetings || []);
+      showToast.success('Calendario sincronizado', `${data.meetings?.length || 0} reuniones actualizadas.`);
     } catch (err: any) {
-      alert('Error al sincronizar calendario: ' + err.message);
+      showToast.error('Error al sincronizar calendario', err.message || 'No se pudo conectar con Google Calendar.');
     } finally {
       setRefreshing(false);
     }
@@ -231,8 +233,14 @@ export const CalendarPage: React.FC = () => {
       }
       setModalMode('details');
       setSelectedMeeting(null);
+      showToast.success(
+        willRecord ? 'Grabación activada' : 'Grabación pausada',
+        scope === 'series'
+          ? (willRecord ? 'El bot asistirá a todos los eventos de esta serie.' : 'Toda la serie ha sido excluida del bot.')
+          : (willRecord ? 'El bot asistirá a esta reunión.' : 'Esta reunión ha sido excluida del bot.')
+      );
     } catch (err: any) {
-      alert('Error al actualizar: ' + err.message);
+      showToast.error('Error al actualizar regla', err.message);
     }
   };
 

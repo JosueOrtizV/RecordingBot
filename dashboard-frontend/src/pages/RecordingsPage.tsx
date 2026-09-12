@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../api/client';
 import { Recording, RecordingStats } from '../types';
+import { showToast, showConfirm } from '../utils/swal';
 import {
   Disc,
   FileText,
@@ -117,15 +118,21 @@ export const RecordingsPage: React.FC = () => {
   }, [searchQuery]);
 
   const deleteRecording = async (id: string) => {
-    if (!confirm('¿Seguro que deseas eliminar este registro del historial? (El archivo en Google Drive se conservará)')) {
-      return;
-    }
+    const confirmed = await showConfirm({
+      title: '¿Eliminar registro?',
+      text: 'Se eliminará este registro del historial del bot. El archivo en Google Drive se conservará intacto.',
+      confirmText: 'Sí, eliminar',
+      cancelText: 'Cancelar',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
 
     try {
       await fetchApi(`/api/recordings/${id}`, { method: 'DELETE' });
+      showToast.success('Registro eliminado', 'La reunión se quitó del historial.');
       loadRecordings(page);
     } catch (err: any) {
-      alert('Error al eliminar: ' + err.message);
+      showToast.error('Error al eliminar', err.message || 'No se pudo eliminar el registro.');
     }
   };
 

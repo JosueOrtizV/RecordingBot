@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Square, CloudUpload, Trash2, Loader2, AlertTriangle } from 'lucide-react';
 import { fetchApi } from '../api/client';
+import { showToast } from '../utils/swal';
 
 interface StopRecordingModalProps {
   recordingId: string;
@@ -55,8 +56,15 @@ export const StopRecordingModal: React.FC<StopRecordingModalProps> = ({
       );
       onStopped(save);
       onClose();
+      if (save) {
+        showToast.success('Grabación detenida', 'El bot se retiró y los archivos se están procesando para subida.');
+      } else {
+        showToast.info('Grabación descartada', 'El bot se retiró y la grabación fue cancelada.');
+      }
     } catch (err: any) {
-      setError(err.message || 'Error al detener la reunión.');
+      const msg = err.message || 'Error al detener la reunión.';
+      setError(msg);
+      showToast.error('Error al detener bot', msg);
     } finally {
       setLoading(false);
       setActionType(null);

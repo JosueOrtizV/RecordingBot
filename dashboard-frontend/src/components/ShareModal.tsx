@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Globe, Lock, Users, Copy, Check, ExternalLink, Loader2, ShieldCheck } from 'lucide-react';
 import { fetchApi } from '../api/client';
+import { showToast } from '../utils/swal';
 
 interface ShareModalProps {
   recordingId: string;
@@ -68,8 +69,11 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       setSelectedAccess(data.shareAccess);
       setShareToken(data.shareToken);
       onUpdateSuccess(data.shareAccess, data.shareToken);
+      showToast.success('Configuración actualizada', 'Los permisos de acceso han sido guardados.');
     } catch (err: any) {
-      setError(err.message || 'Error al actualizar configuración de compartir');
+      const msg = err.message || 'Error al actualizar configuración de compartir';
+      setError(msg);
+      showToast.error('Error al compartir', msg);
     } finally {
       setLoading(false);
     }
@@ -84,6 +88,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     }
     navigator.clipboard.writeText(publicUrl);
     setCopied(true);
+    showToast.success('Enlace copiado', 'El enlace de la reunión está listo para compartir.');
     setTimeout(() => setCopied(false), 2000);
   };
 

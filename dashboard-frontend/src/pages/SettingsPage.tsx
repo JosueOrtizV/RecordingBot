@@ -3,12 +3,12 @@ import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import { fetchApi } from '../api/client';
 import { BlocklistItem } from '../types';
+import { showToast, showConfirm } from '../utils/swal';
 import {
   Settings,
   ShieldAlert,
   Plus,
   Trash2,
-  CheckCircle2,
   Save,
   Video,
   Mic,
@@ -71,7 +71,6 @@ export const SettingsPage: React.FC = () => {
   const [minutesPrompt, setMinutesPrompt] = useState(settings?.minutes_prompt || '');
 
   const [saving, setSaving] = useState(false);
-  const [savedSuccess, setSavedSuccess] = useState(false);
   const [showTelegramHelp, setShowTelegramHelp] = useState(false);
 
   // Close telegram help modal on Escape & lock body scroll
@@ -130,7 +129,6 @@ export const SettingsPage: React.FC = () => {
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setSavedSuccess(false);
 
     try {
       await updateSettings({
@@ -143,10 +141,9 @@ export const SettingsPage: React.FC = () => {
         auto_join: autoJoin,
         minutes_prompt: minutesPrompt,
       });
-      setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 3000);
+      showToast.success('Configuración guardada', 'Tus preferencias de grabación se actualizaron correctamente.');
     } catch (err: any) {
-      alert('Error al guardar configuración: ' + err.message);
+      showToast.error('Error al guardar', err.message || 'No se pudieron guardar los cambios');
     } finally {
       setSaving(false);
     }
@@ -172,19 +169,30 @@ export const SettingsPage: React.FC = () => {
       }
       setNewMatchValue('');
       setNewReason('');
+      showToast.success('Regla agregada', 'La reunión quedó excluida de la asistencia del bot.');
     } catch (err: any) {
-      alert('Error al añadir regla: ' + err.message);
+      showToast.error('Error al añadir regla', err.message);
     } finally {
       setAddingRule(false);
     }
   };
 
   const handleDeleteRule = async (id: string) => {
+    const confirmed = await showConfirm({
+      title: '¿Eliminar regla de exclusión?',
+      text: 'El bot volverá a ingresar normalmente a las reuniones que coincidan con este criterio.',
+      confirmText: 'Sí, eliminar regla',
+      cancelText: 'Conservar',
+      isDestructive: true,
+    });
+    if (!confirmed) return;
+
     try {
       await fetchApi(`/api/settings/blocklist/${id}`, { method: 'DELETE' });
       setBlocklist(blocklist.filter((b) => b.id !== id));
+      showToast.success('Regla eliminada');
     } catch (err: any) {
-      alert('Error al eliminar regla: ' + err.message);
+      showToast.error('Error al eliminar regla', err.message);
     }
   };
 
@@ -404,13 +412,6 @@ export const SettingsPage: React.FC = () => {
               <Save className="w-4 h-4" />
               <span>{saving ? 'Guardando...' : 'Guardar Preferencias'}</span>
             </button>
-
-            {savedSuccess && (
-              <span className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-semibold animate-in fade-in">
-                <CheckCircle2 className="w-4 h-4" />
-                Preferencias actualizadas con éxito
-              </span>
-            )}
           </div>
         </form>
       </div>

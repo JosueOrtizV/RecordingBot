@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { fetchApi } from '../api/client';
 import { AdminUser, AdminStats } from '../types';
+import { showToast } from '../utils/swal';
 import {
   Users,
   Shield,
@@ -14,8 +15,6 @@ import {
   Video,
   Lock,
   AlertTriangle,
-  CheckCircle2,
-  XCircle,
 } from 'lucide-react';
 
 export const AdminUsersPage: React.FC = () => {
@@ -36,7 +35,6 @@ export const AdminUsersPage: React.FC = () => {
   const [statusModalUser, setStatusModalUser] = useState<AdminUser | null>(null);
   const [roleModalUser, setRoleModalUser] = useState<AdminUser | null>(null);
   const [isActionLoading, setIsActionLoading] = useState<boolean>(false);
-  const [actionFeedback, setActionFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -49,10 +47,7 @@ export const AdminUsersPage: React.FC = () => {
       setStats(statsRes);
     } catch (err: any) {
       console.error('Error loading admin data:', err);
-      setActionFeedback({
-        type: 'error',
-        message: err.message || 'Error al cargar los usuarios.',
-      });
+      showToast.error('Error al cargar datos', err.message || 'No se pudo obtener la información de usuarios.');
     } finally {
       setIsLoading(false);
     }
@@ -88,24 +83,20 @@ export const AdminUsersPage: React.FC = () => {
   const handleToggleStatus = async () => {
     if (!statusModalUser) return;
     setIsActionLoading(true);
-    setActionFeedback(null);
     const newStatus = !statusModalUser.isActive;
     try {
       await fetchApi(`/api/admin/users/${statusModalUser.id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ isActive: newStatus }),
       });
-      setActionFeedback({
-        type: 'success',
-        message: `Cuenta de ${statusModalUser.name} ${newStatus ? 'activada' : 'suspendida'} correctamente.`,
-      });
+      showToast.success(
+        newStatus ? 'Cuenta reactivada' : 'Cuenta suspendida',
+        `La cuenta de ${statusModalUser.name} ha sido ${newStatus ? 'reactivada' : 'suspendida'} correctamente.`
+      );
       setStatusModalUser(null);
       await loadData();
     } catch (err: any) {
-      setActionFeedback({
-        type: 'error',
-        message: err.message || 'Error al cambiar el estado del usuario.',
-      });
+      showToast.error('Error al cambiar estado', err.message || 'No se pudo actualizar el estado.');
     } finally {
       setIsActionLoading(false);
     }
@@ -114,23 +105,19 @@ export const AdminUsersPage: React.FC = () => {
   const handleChangeRole = async (targetRole: 'admin' | 'user') => {
     if (!roleModalUser) return;
     setIsActionLoading(true);
-    setActionFeedback(null);
     try {
       await fetchApi(`/api/admin/users/${roleModalUser.id}/role`, {
         method: 'PATCH',
         body: JSON.stringify({ role: targetRole }),
       });
-      setActionFeedback({
-        type: 'success',
-        message: `Rol de ${roleModalUser.name} actualizado a ${targetRole === 'admin' ? 'Administrador' : 'Usuario'}.`,
-      });
+      showToast.success(
+        'Rol actualizado',
+        `Rol de ${roleModalUser.name} actualizado a ${targetRole === 'admin' ? 'Administrador' : 'Usuario'}.`
+      );
       setRoleModalUser(null);
       await loadData();
     } catch (err: any) {
-      setActionFeedback({
-        type: 'error',
-        message: err.message || 'Error al cambiar el rol del usuario.',
-      });
+      showToast.error('Error al cambiar rol', err.message || 'No se pudo actualizar el rol.');
     } finally {
       setIsActionLoading(false);
     }
@@ -198,31 +185,6 @@ export const AdminUsersPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Feedback Toast */}
-      {actionFeedback && (
-        <div
-          className={`p-4 rounded-2xl flex items-center justify-between gap-3 text-sm animate-in fade-in duration-200 ${
-            actionFeedback.type === 'success'
-              ? 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
-              : 'bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
-          }`}
-        >
-          <div className="flex items-center gap-2.5">
-            {actionFeedback.type === 'success' ? (
-              <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-            ) : (
-              <XCircle className="w-5 h-5 text-rose-500 shrink-0" />
-            )}
-            <span>{actionFeedback.message}</span>
-          </div>
-          <button
-            onClick={() => setActionFeedback(null)}
-            className="text-xs opacity-70 hover:opacity-100 underline shrink-0"
-          >
-            Cerrar
-          </button>
-        </div>
-      )}
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">

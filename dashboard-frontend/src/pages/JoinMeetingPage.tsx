@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { fetchApi } from '../api/client';
 import { Video, Mic, FileText, Send, CheckCircle2, AlertCircle, Loader2, Zap, HardDrive } from 'lucide-react';
 import { WorkerStatus } from '../types';
+import { showToast } from '../utils/swal';
 
 export const JoinMeetingPage: React.FC = () => {
   const { settings } = useAuth();
@@ -86,6 +87,7 @@ export const JoinMeetingPage: React.FC = () => {
         message: `${data.message} (${data.estimatedWait})`,
         botId: data.botId,
       });
+      showToast.success('¡Bot en camino!', `${data.message} (${data.estimatedWait})`);
 
       setUrl('');
       setTitle('');
@@ -95,6 +97,7 @@ export const JoinMeetingPage: React.FC = () => {
         success: false,
         message: err.message || 'Error al despachar el bot a la reunión',
       });
+      showToast.error('No se pudo unir el bot', err.message || 'Error al despachar el bot a la reunión');
     } finally {
       setLoading(false);
     }

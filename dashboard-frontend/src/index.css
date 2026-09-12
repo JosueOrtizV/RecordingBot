@@ -1,3 +1,4 @@
+@import 'sweetalert2/dist/sweetalert2.min.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -48,4 +49,168 @@
 
 .animate-pulse-subtle {
   animation: pulse-subtle 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* SweetAlert2 Base & Custom Tailwind Theme */
+
+/* Toast customization */
+.rb-toast-popup {
+  padding: 0.85rem 1.15rem !important;
+  border-radius: 1.25rem !important;
+  border: 1px solid rgba(226, 232, 240, 0.85) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.05) !important;
+  backdrop-filter: blur(12px) !important;
+  font-family: inherit !important;
+}
+
+.dark .rb-toast-popup {
+  border: 1px solid rgba(30, 41, 59, 0.85) !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3) !important;
+}
+
+.rb-toast-title {
+  font-size: 0.875rem !important;
+  font-weight: 700 !important;
+  margin: 0 !important;
+}
+
+.rb-toast-html {
+  font-size: 0.775rem !important;
+  color: #64748b !important;
+  margin-top: 0.25rem !important;
+}
+
+.dark .rb-toast-html {
+  color: #94a3b8 !important;
+}
+
+.rb-toast-popup .swal2-close {
+  font-size: 1.25rem !important;
+  color: #94a3b8 !important;
+  box-shadow: none !important;
+}
+
+.rb-toast-popup .swal2-close:hover {
+  color: #475569 !important;
+}
+
+.dark .rb-toast-popup .swal2-close:hover {
+  color: #e2e8f0 !important;
+}
+
+/* Progress bars */
+.rb-progress-success {
+  background: #10b981 !important;
+}
+
+.rb-progress-error {
+  background: #f43f5e !important;
+}
+
+.rb-progress-info {
+  background: #0ea5e9 !important;
+}
+
+.rb-progress-warning {
+  background: #f59e0b !important;
+}
+
+/* Modal Popup Customization */
+.rb-modal-popup {
+  border-radius: 1.75rem !important;
+  padding: 1.75rem !important;
+  border: 1px solid rgba(226, 232, 240, 0.9) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+  font-family: inherit !important;
+}
+
+.dark .rb-modal-popup {
+  border: 1px solid rgba(30, 41, 59, 0.9) !important;
+}
+
+.rb-modal-title {
+  font-size: 1.25rem !important;
+  font-weight: 800 !important;
+  padding: 0 !important;
+  margin-top: 0.75rem !important;
+}
+
+.rb-modal-text {
+  font-size: 0.875rem !important;
+  line-height: 1.5 !important;
+  color: #64748b !important;
+  margin-top: 0.5rem !important;
+  padding: 0 !important;
+}
+
+.dark .rb-modal-text {
+  color: #94a3b8 !important;
+}
+
+.rb-modal-actions {
+  gap: 0.75rem !important;
+  margin-top: 1.5rem !important;
+  width: 100% !important;
+  justify-content: flex-end !important;
+}
+
+/* Action buttons */
+.rb-btn-confirm {
+  background-color: #0284c7 !important;
+  color: #ffffff !important;
+  padding: 0.625rem 1.25rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  border-radius: 0.875rem !important;
+  transition: all 0.15s ease !important;
+  box-shadow: 0 4px 6px -1px rgba(2, 132, 199, 0.2) !important;
+  cursor: pointer !important;
+}
+
+.rb-btn-confirm:hover {
+  background-color: #0369a1 !important;
+  transform: translateY(-1px) !important;
+}
+
+.rb-btn-destructive {
+  background-color: #e11d48 !important;
+  color: #ffffff !important;
+  padding: 0.625rem 1.25rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  border-radius: 0.875rem !important;
+  transition: all 0.15s ease !important;
+  box-shadow: 0 4px 6px -1px rgba(225, 29, 72, 0.25) !important;
+  cursor: pointer !important;
+}
+
+.rb-btn-destructive:hover {
+  background-color: #be123c !important;
+  transform: translateY(-1px) !important;
+}
+
+.rb-btn-cancel {
+  background-color: #f1f5f9 !important;
+  color: #475569 !important;
+  padding: 0.625rem 1.25rem !important;
+  font-size: 0.875rem !important;
+  font-weight: 600 !important;
+  border-radius: 0.875rem !important;
+  transition: all 0.15s ease !important;
+  cursor: pointer !important;
+}
+
+.dark .rb-btn-cancel {
+  background-color: #1e293b !important;
+  color: #94a3b8 !important;
+}
+
+.rb-btn-cancel:hover {
+  background-color: #e2e8f0 !important;
+  color: #1e293b !important;
+}
+
+.dark .rb-btn-cancel:hover {
+  background-color: #334155 !important;
+  color: #f8fafc !important;
 }
