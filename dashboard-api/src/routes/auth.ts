@@ -56,18 +56,29 @@ router.get('/google/callback', async (req: Request, res: Response) => {
     const userName = profile.name || email.split('@')[0];
     const defaultBotName = `${userName}'s Notetaker`;
 
+    // Check if existing user is deactivated
+    const existingUserRes = await query('SELECT id, is_active, role FROM users WHERE email = $1', [email]);
+    if (existingUserRes.rows.length > 0 && !existingUserRes.rows[0].is_active) {
+      console.warn(`Blocked login attempt for deactivated user ${email}`);
+      res.redirect(`${config.frontendUrl}/login?error=${encodeURIComponent('Tu cuenta ha sido desactivada por un administrador. Contacta al administrador.')}`);
+      return;
+    }
+
+    const initialRole = config.adminEmails.includes(email) ? 'admin' : 'user';
+
     // Insert or update user
     const userRes = await query(
-      `INSERT INTO users (email, name, picture_url, google_tokens, bot_display_name, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
+      `INSERT INTO users (email, name, picture_url, google_tokens, bot_display_name, role, last_login_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
        ON CONFLICT (email) DO UPDATE SET
          name = EXCLUDED.name,
          picture_url = EXCLUDED.picture_url,
          google_tokens = EXCLUDED.google_tokens,
          bot_display_name = COALESCE(users.bot_display_name, EXCLUDED.bot_display_name),
+         last_login_at = NOW(),
          updated_at = NOW()
-       RETURNING id, email, name, picture_url, bot_display_name`,
-      [email, userName, profile.picture || null, JSON.stringify(tokens), defaultBotName]
+       RETURNING id, email, name, picture_url, bot_display_name, role, is_active, last_login_at`,
+      [email, userName, profile.picture || null, JSON.stringify(tokens), defaultBotName, initialRole]
     );
 
     const user = userRes.rows[0];

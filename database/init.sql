@@ -13,7 +13,9 @@ CREATE TABLE IF NOT EXISTS users (
     picture_url TEXT,
     google_tokens JSONB NOT NULL,          -- {access_token, refresh_token, expiry_date, scope, token_type}
     bot_display_name VARCHAR(100) DEFAULT 'Notetaker',
+    role VARCHAR(20) DEFAULT 'user',       -- 'admin', 'user'
     is_active BOOLEAN DEFAULT true,
+    last_login_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -92,6 +94,8 @@ CREATE TABLE IF NOT EXISTS scheduled_meetings (
 
 -- Índices para optimizar consultas frecuentes
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);
 CREATE INDEX IF NOT EXISTS idx_recordings_user_id ON recordings(user_id);
 CREATE INDEX IF NOT EXISTS idx_recordings_created_at ON recordings(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_user_id ON scheduled_meetings(user_id);

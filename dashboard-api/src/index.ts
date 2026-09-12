@@ -10,6 +10,7 @@ import settingsRoutes from './routes/settings.js';
 import recordingsRoutes from './routes/recordings.js';
 import botRoutes from './routes/bot.js';
 import sharedRoutes from './routes/shared.js';
+import adminRoutes from './routes/admin.js';
 
 const app = express();
 
@@ -51,6 +52,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/recordings', recordingsRoutes);
 app.use('/api/bot', botRoutes);
 app.use('/api/shared', sharedRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Global Error Handler
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

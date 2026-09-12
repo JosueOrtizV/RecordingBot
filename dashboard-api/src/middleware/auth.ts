@@ -9,6 +9,9 @@ export interface AuthenticatedUser {
   name: string;
   pictureUrl?: string;
   botDisplayName: string;
+  role: 'admin' | 'user';
+  isActive: boolean;
+  lastLoginAt?: string;
 }
 
 declare global {
@@ -35,7 +38,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     const decoded = jwt.verify(token, config.jwtSecret) as { userId: string };
     
     const userRes = await query(
-      'SELECT id, email, name, picture_url, bot_display_name FROM users WHERE id = $1 AND is_active = true',
+      'SELECT id, email, name, picture_url, bot_display_name, role, is_active, last_login_at FROM users WHERE id = $1 AND is_active = true',
       [decoded.userId]
     );
 
@@ -51,6 +54,9 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       name: row.name,
       pictureUrl: row.picture_url,
       botDisplayName: row.bot_display_name,
+      role: row.role || 'user',
+      isActive: Boolean(row.is_active),
+      lastLoginAt: row.last_login_at,
     };
 
     next();
@@ -61,4 +67,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
     res.status(401).json({ error: 'Token inválido.' });
   }
+}
+
+export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (!req.user || req.user.role !== 'admin') {
+    res.status(403).json({ error: 'Acceso denegado. Se requieren permisos de administrador.' });
+    return;
+  }
+  next();
 }

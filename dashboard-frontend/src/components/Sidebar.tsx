@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Video, Calendar, Disc, Settings, X } from 'lucide-react';
+import { LayoutDashboard, Video, Calendar, Disc, Settings, X, ShieldCheck } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 interface SidebarProps {
   mobileOpen?: boolean;
@@ -8,6 +9,8 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) => {
+  const { user } = useAuth();
+
   // Close on Escape key when mobile menu is open
   useEffect(() => {
     if (!mobileOpen || !onCloseMobile) return;
@@ -24,12 +27,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
       document.body.style.overflow = prevOverflow;
     };
   }, [mobileOpen, onCloseMobile]);
+
   const navItems = [
     { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/calendar', label: 'Calendario', icon: Calendar },
     { to: '/join', label: 'Unirse Directo', icon: Video, badge: 'On-Demand' },
     { to: '/recordings', label: 'Grabaciones', icon: Disc },
     { to: '/settings', label: 'Configuración', icon: Settings },
+    ...(user?.role === 'admin'
+      ? [{ to: '/admin/users', label: 'Usuarios', icon: ShieldCheck, badge: 'Admin' }]
+      : []),
   ];
 
   const content = (

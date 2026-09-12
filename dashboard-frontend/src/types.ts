@@ -4,6 +4,32 @@ export interface User {
   name: string;
   pictureUrl?: string;
   botDisplayName: string;
+  role?: 'admin' | 'user';
+  isActive?: boolean;
+  lastLoginAt?: string;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  pictureUrl?: string;
+  botDisplayName: string;
+  role: 'admin' | 'user';
+  isActive: boolean;
+  createdAt: string;
+  lastLoginAt?: string;
+  totalRecordings: number;
+  totalDurationSeconds: number;
+}
+
+export interface AdminStats {
+  totalUsers: number;
+  activeUsers: number;
+  suspendedUsers: number;
+  adminUsers: number;
+  totalRecordings: number;
+  totalDurationSeconds: number;
 }
 
 export interface UserSettings {

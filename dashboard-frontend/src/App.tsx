@@ -13,6 +13,7 @@ import { RecordingsPage } from './pages/RecordingsPage';
 import { RecordingDetailPage } from './pages/RecordingDetailPage';
 import { SharedRecordingPage } from './pages/SharedRecordingPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { AdminUsersPage } from './pages/AdminUsersPage';
 import { Loader2 } from 'lucide-react';
 
 const ProtectedLayout: React.FC = () => {
@@ -65,6 +66,7 @@ export const App: React.FC = () => {
               <Route path="/recordings" element={<RecordingsPage />} />
               <Route path="/recordings/:id" element={<RecordingDetailPage />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/admin/users" element={<AdminUsersPage />} />
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

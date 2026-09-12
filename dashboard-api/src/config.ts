@@ -30,6 +30,7 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || 'recordingbot-super-secret-jwt-key-change-in-prod',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
   allowedDomains: (process.env.ALLOWED_EMAIL_DOMAINS || 'clevercloud.mx').split(',').map(d => d.trim().toLowerCase()),
+  adminEmails: (process.env.ADMIN_EMAILS || 'josue.ortiz@clevercloud.mx').split(',').map(e => e.trim().toLowerCase()),
 
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID || fileClientId,
