@@ -40,7 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
   ];
 
   const content = (
-    <div className="flex flex-col justify-between h-full p-4">
+    <div className="flex flex-col justify-between min-h-full p-4">
       <div className="space-y-1">
         <div className="flex items-center justify-between px-3 mb-3">
           <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
@@ -102,8 +102,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
 
   return (
     <>
-      {/* Desktop static sidebar */}
-      <aside className="w-64 border-r border-slate-200/80 dark:border-slate-800/80 bg-white/60 dark:bg-slate-950/60 backdrop-blur-md hidden md:flex flex-col shrink-0 transition-colors duration-200">
+      {/* Desktop sticky sidebar */}
+      <aside className="w-64 border-r border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md hidden md:flex flex-col shrink-0 sticky top-14 sm:top-16 h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] overflow-y-auto transition-colors duration-200 z-10">
         {content}
       </aside>
 

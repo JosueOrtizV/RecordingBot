@@ -36,9 +36,9 @@ const ProtectedLayout: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-200 antialiased selection:bg-sky-500 selection:text-white">
       <Navbar onToggleMobileMenu={() => setMobileMenuOpen(!mobileMenuOpen)} />
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex relative">
         <Sidebar mobileOpen={mobileMenuOpen} onCloseMobile={() => setMobileMenuOpen(false)} />
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto w-full">
             <ActiveRecordingsBanner />
             <Outlet />
