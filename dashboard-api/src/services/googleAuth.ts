@@ -161,3 +161,26 @@ export async function setDriveFilePrivate(userId: string, fileId: string): Promi
     return false;
   }
 }
+
+export async function syncUserProfileFromGoogle(userId: string): Promise<{ name?: string; pictureUrl?: string } | null> {
+  try {
+    const auth = await getUserOAuth2Client(userId);
+    const oauth2 = google.oauth2({ version: 'v2', auth });
+    const { data } = await oauth2.userinfo.get();
+    if (data && (data.picture || data.name)) {
+      await query(
+        `UPDATE users 
+         SET picture_url = COALESCE($1, picture_url), 
+             name = COALESCE($2, name), 
+             updated_at = NOW() 
+         WHERE id = $3`,
+        [data.picture || null, data.name || null, userId]
+      );
+      return { name: data.name || undefined, pictureUrl: data.picture || undefined };
+    }
+    return null;
+  } catch (err: any) {
+    console.warn(`Could not sync Google user profile for ${userId}:`, err.message);
+    return null;
+  }
+}

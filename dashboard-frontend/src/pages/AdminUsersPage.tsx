@@ -318,6 +318,7 @@ export const AdminUsersPage: React.FC = () => {
                               <img
                                 src={u.pictureUrl}
                                 alt={u.name}
+                                referrerPolicy="no-referrer"
                                 className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-700"
                               />
                             ) : (
@@ -438,6 +439,7 @@ export const AdminUsersPage: React.FC = () => {
                           <img
                             src={u.pictureUrl}
                             alt={u.name}
+                            referrerPolicy="no-referrer"
                             className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700"
                           />
                         ) : (

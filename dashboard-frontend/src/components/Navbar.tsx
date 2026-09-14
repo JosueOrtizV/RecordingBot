@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { LogOut, User as UserIcon, Sun, Moon, Menu, Radio } from 'lucide-react';
@@ -10,6 +10,7 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileMenu }) => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const [imgError, setImgError] = useState(false);
 
   return (
     <header className="h-14 sm:h-16 border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between sticky top-0 z-20 transition-colors duration-200">
@@ -64,10 +65,12 @@ export const Navbar: React.FC<NavbarProps> = ({ onToggleMobileMenu }) => {
           <>
             {/* User Profile Chip */}
             <div className="flex items-center gap-2 bg-slate-100/80 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 p-1 sm:px-3 sm:py-1.5 rounded-full sm:rounded-2xl transition-colors">
-              {user.pictureUrl ? (
+              {user.pictureUrl && !imgError ? (
                 <img
                   src={user.pictureUrl}
                   alt={user.name}
+                  referrerPolicy="no-referrer"
+                  onError={() => setImgError(true)}
                   className="w-6 h-6 rounded-full ring-1 ring-slate-300 dark:ring-slate-700 object-cover"
                 />
               ) : (

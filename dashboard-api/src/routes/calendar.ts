@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { syncUserCalendar } from '../services/calendarService.js';
+import { syncUserProfileFromGoogle } from '../services/googleAuth.js';
 import { query } from '../db.js';
 
 const router = Router();
@@ -52,7 +53,10 @@ router.get('/upcoming', requireAuth, async (req: Request, res: Response) => {
 router.post('/refresh', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
-    await syncUserCalendar(userId);
+    await Promise.allSettled([
+      syncUserCalendar(userId),
+      syncUserProfileFromGoogle(userId),
+    ]);
     
     // Return all meetings with blocklist joined
     const dbRes = await query(

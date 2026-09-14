@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { google } from 'googleapis';
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
-import { generateAuthUrl, getOAuth2Client } from '../services/googleAuth.js';
+import { generateAuthUrl, getOAuth2Client, syncUserProfileFromGoogle } from '../services/googleAuth.js';
 import { query } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -119,6 +119,10 @@ router.get('/me', requireAuth, async (req: Request, res: Response) => {
   try {
     const user = req.user!;
     const settingsRes = await query('SELECT * FROM user_settings WHERE user_id = $1', [user.id]);
+
+    // Keep profile picture & name in sync with Google in the background
+    syncUserProfileFromGoogle(user.id).catch(() => {});
+
     res.json({
       user,
       settings: settingsRes.rows[0] || null,
