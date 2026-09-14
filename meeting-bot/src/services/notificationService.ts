@@ -36,6 +36,7 @@ export interface MeetingFailedPayload {
     meetingName?: string;
     meetingTitle?: string;
     timezone?: string;
+    dedupGroupId?: string;
   };
 }
 
@@ -50,6 +51,7 @@ export interface MeetingFailureContext {
   botId?: string;
   eventId?: string;
   provider?: string;
+  dedupGroupId?: string;
 }
 
 type RedisNotificationPayload = RecordingCompletedPayload | MeetingFailedPayload | RecordingStartedPayload;
@@ -186,6 +188,7 @@ export function createMeetingFailedPayload(context: MeetingFailureContext, error
       meetingName: (context as any).meetingTitle || context.name,
       meetingTitle: (context as any).meetingTitle || (context as any).namePrefix,
       timezone: context.timezone,
+      dedupGroupId: context.dedupGroupId || (context as any).dedupGroupId,
     },
   };
 }

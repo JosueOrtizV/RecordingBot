@@ -118,7 +118,20 @@ async function startNotificationListener() {
           }
 
           // If deduplicated group, update all linked records
-          if (dedupGroupId) {
+          let activeDedupGroupId = dedupGroupId;
+          if (!activeDedupGroupId && (recordingId || botId || eventId)) {
+            const rowRes = await query(
+              `SELECT dedup_group_id FROM recordings 
+               WHERE (id::text = $1 OR calendar_event_id = $1 OR id::text = $2 OR calendar_event_id = $2)
+                 AND dedup_group_id IS NOT NULL LIMIT 1`,
+              [recordingId, botId || eventId]
+            );
+            if (rowRes.rows.length > 0) {
+              activeDedupGroupId = rowRes.rows[0].dedup_group_id;
+            }
+          }
+
+          if (activeDedupGroupId) {
             await query(
               `UPDATE recordings
                SET status = 'completed',
@@ -128,7 +141,7 @@ async function startNotificationListener() {
                    transcript_text = COALESCE($4, transcript_text),
                    completed_at = NOW()
                WHERE dedup_group_id::text = $5`,
-              [driveUrl, fileId, durationSecs, transcriptText, dedupGroupId]
+              [driveUrl, fileId, durationSecs, transcriptText, activeDedupGroupId]
             );
           }
         } catch (dbErr) {
@@ -219,14 +232,27 @@ async function startNotificationListener() {
               [friendlyReason, recordingId, botId || eventId]
             );
           }
-          if (dedupGroupId) {
+          let activeDedupGroupId = dedupGroupId;
+          if (!activeDedupGroupId && (recordingId || botId || eventId)) {
+            const rowRes = await query(
+              `SELECT dedup_group_id FROM recordings 
+               WHERE (id::text = $1 OR calendar_event_id = $1 OR id::text = $2 OR calendar_event_id = $2)
+                 AND dedup_group_id IS NOT NULL LIMIT 1`,
+              [recordingId, botId || eventId]
+            );
+            if (rowRes.rows.length > 0) {
+              activeDedupGroupId = rowRes.rows[0].dedup_group_id;
+            }
+          }
+
+          if (activeDedupGroupId) {
             await query(
               `UPDATE recordings
                SET status = 'failed',
                    error_message = $1,
                    completed_at = NOW()
                WHERE dedup_group_id::text = $2`,
-              [friendlyReason, dedupGroupId]
+              [friendlyReason, activeDedupGroupId]
             );
           }
         } catch (dbErr) {
