@@ -60,7 +60,24 @@ router.post('/join', requireAuth, async (req: Request, res: Response) => {
     const settings = settingsRes.rows[0] || {};
 
     const mode = recordingMode || (settings.enable_video ? 'video' : (settings.enable_audio ? 'audio' : 'transcript_only'));
-    const title = meetingTitle?.trim() || 'Reunión On-Demand (Panel)';
+    let title = meetingTitle?.trim();
+    if (!title) {
+      const titleRes = await query(
+        `SELECT title FROM scheduled_meetings
+         WHERE meet_url LIKE $1
+           AND start_time >= NOW() - INTERVAL '3 hours'
+           AND start_time <= NOW() + INTERVAL '2 hours'
+           AND title IS NOT NULL AND length(title) > 0
+         ORDER BY start_time DESC
+         LIMIT 1`,
+        [`${canonicalUrl}%`]
+      );
+      if (titleRes.rows.length > 0 && titleRes.rows[0].title) {
+        title = titleRes.rows[0].title;
+      } else {
+        title = 'Reunión On-Demand (Panel)';
+      }
+    }
 
     // Check if ANOTHER user already has an active or pending recording for this canonical URL (Deduplication)
     const existingRecordingRes = await query(
@@ -134,18 +151,58 @@ router.post('/join', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
+    // Check if other teammates have this meeting scheduled in their calendar around now (-3h to +1h)
+    const scheduledTeammatesRes = await query(
+      `SELECT DISTINCT sm.user_id, sm.title, sm.calendar_event_id, u.name, u.email
+       FROM scheduled_meetings sm
+       JOIN users u ON u.id = sm.user_id
+       WHERE sm.meet_url LIKE $1
+         AND sm.user_id != $2
+         AND u.is_active = true
+         AND sm.start_time >= NOW() - INTERVAL '3 hours'
+         AND sm.start_time <= NOW() + INTERVAL '1 hour'`,
+      [`${canonicalUrl}%`, user.id]
+    );
+
+    const hasTeammates = scheduledTeammatesRes.rows.length > 0;
+    const dedupGroupId = hasTeammates ? uuidv4() : null;
+
     const botId = uuidv4();
     const eventId = `manual_${botId.substring(0, 8)}`;
 
-    // Create recording entry in DB
+    // Create recording entry in DB for the requester
     await query(
       `INSERT INTO recordings (
          id, user_id, owner_user_id, meeting_title, meeting_url,
-         calendar_event_id, recording_mode, status, started_at
+         calendar_event_id, recording_mode, status, dedup_group_id, started_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW())`,
-      [botId, user.id, user.id, title, canonicalUrl, eventId, mode]
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, NOW())`,
+      [botId, user.id, user.id, title, canonicalUrl, eventId, mode, dedupGroupId]
     );
+
+    // Pre-create linked recording entries for any teammates who also had this meeting scheduled
+    if (hasTeammates) {
+      for (const teammate of scheduledTeammatesRes.rows) {
+        const teammateRecordId = uuidv4();
+        await query(
+          `INSERT INTO recordings (
+             id, user_id, owner_user_id, meeting_title, meeting_url,
+             calendar_event_id, recording_mode, status, dedup_group_id, started_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, NOW())`,
+          [
+            teammateRecordId,
+            teammate.user_id,
+            user.id, // Requester is the Drive owner
+            teammate.title || title,
+            canonicalUrl,
+            teammate.calendar_event_id || eventId,
+            mode,
+            dedupGroupId,
+          ]
+        );
+      }
+    }
 
     // Build payload for Redis consumer
     const jobPayload = {
@@ -155,6 +212,7 @@ router.post('/join', requireAuth, async (req: Request, res: Response) => {
       botId,
       eventId,
       userId: user.id,
+      dedupGroupId,
       teamId: 'recording-bot',
       timezone: config.timezone,
       meetingTitle: title,
@@ -168,10 +226,15 @@ router.post('/join', requireAuth, async (req: Request, res: Response) => {
 
     const stats = await getQueueStats();
 
+    const teammateNames = scheduledTeammatesRes.rows.map((t: any) => t.name || t.email).join(', ');
+    const responseMsg = hasTeammates
+      ? `Bot despachado exitosamente. La grabación se sincronizará automáticamente en los paneles de: ${teammateNames}.`
+      : 'Bot despachado exitosamente hacia la reunión.';
+
     res.status(202).json({
       success: true,
       botId,
-      message: 'Bot despachado exitosamente hacia la reunión.',
+      message: responseMsg,
       queueDepth: stats.pending,
       estimatedWait: stats.pending <= 1 ? '0 min (Iniciando)' : `~${stats.pending * 2} min (En cola)`,
     });
