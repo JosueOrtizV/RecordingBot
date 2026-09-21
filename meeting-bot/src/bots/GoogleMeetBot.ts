@@ -844,9 +844,6 @@ export class GoogleMeetBot extends MeetBotBase {
       this._logger.warn('Could not start CaptionTask:', captionErr);
     }
 
-    // Send automated chat notification
-    await this.sendMeetingChatMessage(botName);
-
     // Capture and send the browser console logs to Node.js context
     this.page?.on('console', async msg => {
       try {
@@ -1491,7 +1488,14 @@ export class GoogleMeetBot extends MeetBotBase {
         recordingMode
       }
     );
-  
+
+    this._logger.info('Recording started successfully! Audio/video capture is active.');
+
+    // Send automated chat notification asynchronously (now that recording is already rolling!)
+    this.sendMeetingChatMessage(botName).catch(chatErr => {
+      this._logger.warn('[ChatNotification]: Background chat message failed:', chatErr);
+    });
+
     this._logger.info('Waiting for recording duration', config.maxRecordingDuration, 'minutes...');
 
     waitingPromise.promise.then(async () => {
