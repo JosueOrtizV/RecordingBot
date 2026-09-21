@@ -160,7 +160,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     let sharedWith: any[] = [];
     if (recording.dedup_group_id) {
       const sharedRes = await query(
-        `SELECT u.id, u.name, u.email, u.avatar_url, (u.id = r.owner_user_id) as is_drive_owner
+        `SELECT u.id, u.name, u.email, u.picture_url as avatar_url, (u.id = r.owner_user_id) as is_drive_owner
          FROM recordings r
          JOIN users u ON u.id = r.user_id
          WHERE r.dedup_group_id = $1
