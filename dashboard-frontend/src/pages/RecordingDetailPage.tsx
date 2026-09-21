@@ -440,6 +440,41 @@ export const RecordingDetailPage: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {/* Shared Team Meeting Indicator */}
+              {recording.shared_with && recording.shared_with.length > 1 && (
+                <div className="col-span-2 mt-1 p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 space-y-2">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-indigo-950 dark:text-indigo-200">
+                    <span className="flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-indigo-500" />
+                      Reunión compartida con el equipo ({recording.shared_with.length})
+                    </span>
+                    {recording.owner_name && (
+                      <span className="text-[10px] font-normal text-indigo-600 dark:text-indigo-400">
+                        Drive de {recording.owner_name.replace(/^Ing\.\s+/i, '')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {recording.shared_with.map((member) => (
+                      <span
+                        key={member.id}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-medium border transition-colors ${
+                          member.is_drive_owner
+                            ? 'bg-indigo-100/90 dark:bg-indigo-900/60 border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-200 font-bold'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                        }`}
+                        title={member.is_drive_owner ? `Archivo guardado en el Drive de ${member.name}` : member.email}
+                      >
+                        {member.name || member.email}
+                        {member.is_drive_owner && (
+                          <HardDrive className="w-3 h-3 text-indigo-600 dark:text-indigo-400 ml-0.5" />
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

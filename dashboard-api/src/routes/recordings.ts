@@ -139,7 +139,13 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     const id = req.params.id;
 
     const recordingRes = await query(
-      'SELECT * FROM recordings WHERE id = $1 AND user_id = $2',
+      `SELECT r.*,
+              u_owner.name as owner_name,
+              u_owner.email as owner_email,
+              (COALESCE(r.owner_user_id, r.user_id) = $2) as is_drive_owner
+       FROM recordings r
+       LEFT JOIN users u_owner ON u_owner.id = r.owner_user_id
+       WHERE r.id = $1 AND r.user_id = $2`,
       [id, userId]
     );
 
@@ -148,7 +154,28 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
       return;
     }
 
-    res.json({ recording: recordingRes.rows[0] });
+    const recording = recordingRes.rows[0];
+
+    // If deduplicated / shared meeting, get teammates who also share this recording
+    let sharedWith: any[] = [];
+    if (recording.dedup_group_id) {
+      const sharedRes = await query(
+        `SELECT u.id, u.name, u.email, u.avatar_url, (u.id = r.owner_user_id) as is_drive_owner
+         FROM recordings r
+         JOIN users u ON u.id = r.user_id
+         WHERE r.dedup_group_id = $1
+         ORDER BY (u.id = r.owner_user_id) DESC, u.name ASC`,
+        [recording.dedup_group_id]
+      );
+      sharedWith = sharedRes.rows;
+    }
+
+    res.json({
+      recording: {
+        ...recording,
+        shared_with: sharedWith,
+      },
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -301,7 +328,7 @@ router.put('/:id/share', requireAuth, async (req: Request, res: Response) => {
     }
 
     const recRes = await query(
-      'SELECT id, user_id, drive_file_id, share_token, share_access FROM recordings WHERE id = $1 AND user_id = $2',
+      'SELECT id, user_id, owner_user_id, dedup_group_id, drive_file_id, share_token, share_access FROM recordings WHERE id = $1 AND user_id = $2',
       [id, userId]
     );
 
@@ -319,19 +346,29 @@ router.put('/:id/share', requireAuth, async (req: Request, res: Response) => {
       shareToken = uuidv4();
     }
 
-    // Manage Google Drive file permissions
+    // Manage Google Drive file permissions using the actual Drive owner credentials
     if (recording.drive_file_id) {
+      const driveOwnerId = recording.owner_user_id || userId;
       if (access === 'public') {
-        await setDriveFilePublic(userId, recording.drive_file_id);
+        await setDriveFilePublic(driveOwnerId, recording.drive_file_id);
       } else {
-        await setDriveFilePrivate(userId, recording.drive_file_id);
+        await setDriveFilePrivate(driveOwnerId, recording.drive_file_id);
       }
     }
 
-    const updateRes = await query(
-      'UPDATE recordings SET share_access = $1, share_token = $2 WHERE id = $3 AND user_id = $4 RETURNING id, share_token, share_access',
-      [access, shareToken, id, userId]
-    );
+    // Update the recording (and sync across dedup group if applicable)
+    let updateRes;
+    if (recording.dedup_group_id) {
+      updateRes = await query(
+        'UPDATE recordings SET share_access = $1, share_token = $2 WHERE dedup_group_id = $3 RETURNING id, share_token, share_access',
+        [access, shareToken, recording.dedup_group_id]
+      );
+    } else {
+      updateRes = await query(
+        'UPDATE recordings SET share_access = $1, share_token = $2 WHERE id = $3 AND user_id = $4 RETURNING id, share_token, share_access',
+        [access, shareToken, id, userId]
+      );
+    }
 
     const updated = updateRes.rows[0];
 

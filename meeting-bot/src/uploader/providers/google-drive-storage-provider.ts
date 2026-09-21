@@ -167,6 +167,20 @@ export class GoogleDriveStorageProvider implements StorageProvider {
 
       this.lastUploadedWebLink = response.data.webViewLink || null;
       logger.info(`GoogleDriveStorageProvider: Main file uploaded successfully! ID: ${response.data.id}, Link: ${response.data.webViewLink}`);
+
+      // Allow anyone with the link to read the file so it can be previewed/played in dashboard iframe
+      try {
+        await drive.permissions.create({
+          fileId: response.data.id!,
+          requestBody: {
+            role: 'reader',
+            type: 'anyone',
+          },
+        });
+        logger.info(`GoogleDriveStorageProvider: Granted reader permission to anyone with link for ID: ${response.data.id}`);
+      } catch (permErr) {
+        logger.warn(`GoogleDriveStorageProvider: Could not set reader permission on file:`, permErr);
+      }
     }
 
     // 4. Check if transcript exists or if we should run Whisper AI fallback
@@ -242,6 +256,16 @@ export class GoogleDriveStorageProvider implements StorageProvider {
           fields: 'id, name, webViewLink',
         });
         logger.info(`GoogleDriveStorageProvider: Transcript uploaded successfully! ID: ${tRes.data.id}, Link: ${tRes.data.webViewLink}`);
+        try {
+          await drive.permissions.create({
+            fileId: tRes.data.id!,
+            requestBody: {
+              role: 'reader',
+              type: 'anyone',
+            },
+          });
+        } catch (_) {}
+
         if (isTranscriptOnly) {
           this.lastUploadedWebLink = tRes.data.webViewLink || null;
         }

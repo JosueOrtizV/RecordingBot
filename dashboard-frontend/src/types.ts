@@ -77,6 +77,15 @@ export interface Recording {
   share_token?: string;
   share_access?: 'private' | 'registered' | 'public';
   owner_name?: string;
+  owner_email?: string;
+  is_drive_owner?: boolean;
+  shared_with?: Array<{
+    id: string;
+    name: string;
+    email: string;
+    avatar_url?: string;
+    is_drive_owner: boolean;
+  }>;
   started_at: string;
   completed_at?: string;
   created_at: string;
