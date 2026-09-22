@@ -64,6 +64,7 @@ router.get('/google/callback', async (req: Request, res: Response) => {
       return;
     }
 
+    const isNewUser = existingUserRes.rows.length === 0;
     const initialRole = config.adminEmails.includes(email) ? 'admin' : 'user';
 
     // Insert or update user
@@ -90,6 +91,25 @@ router.get('/google/callback', async (req: Request, res: Response) => {
        ON CONFLICT (user_id) DO NOTHING`,
       [user.id]
     );
+
+    // Seed default blocklist rules for new users
+    if (isNewUser) {
+      const defaultRules = [
+        { type: 'title_contains', val: 'Daily', reason: 'Regla por defecto: Reuniones Daily' },
+        { type: 'title_contains', val: 'Clever Daily con Líderes', reason: 'Regla por defecto' },
+        { type: 'title_contains', val: 'Clever - Sprint Plannig', reason: 'Regla por defecto' },
+        { type: 'title_contains', val: 'Sprint Retrospective', reason: 'Regla por defecto' },
+      ];
+
+      for (const rule of defaultRules) {
+        await query(
+          `INSERT INTO meeting_blocklist (user_id, match_type, match_value, reason)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT DO NOTHING`,
+          [user.id, rule.type, rule.val, rule.reason]
+        );
+      }
+    }
 
     // Create JWT token
     const jwtToken = jwt.sign(

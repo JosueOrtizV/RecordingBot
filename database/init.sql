@@ -101,3 +101,4 @@ CREATE INDEX IF NOT EXISTS idx_recordings_created_at ON recordings(created_at DE
 CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_user_id ON scheduled_meetings(user_id);
 CREATE INDEX IF NOT EXISTS idx_scheduled_meetings_start_time ON scheduled_meetings(start_time);
 CREATE INDEX IF NOT EXISTS idx_blocklist_user_id ON meeting_blocklist(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_meeting_blocklist_user_rule ON meeting_blocklist (user_id, match_type, match_value);
