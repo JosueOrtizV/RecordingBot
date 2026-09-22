@@ -60,7 +60,7 @@ export async function isEventBlocked(userId: string, event: { title?: string | n
 
 export async function pollCalendar(): Promise<void> {
   const now = new Date();
-  const futureLimit = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours ahead
+  const futureLimit = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days ahead
 
   // 1. Check if we have registered users in PostgreSQL
   let users: any[] = [];
@@ -119,8 +119,11 @@ export async function pollCalendar(): Promise<void> {
       const events = res.data.items || [];
       logger.info(`User ${user.email}: found ${events.length} upcoming calendar event(s).`);
 
+      const activeUpcomingMeetEventIds: string[] = [];
+
       for (const event of events) {
         if (!event.id || !event.start) continue;
+        if (event.status === 'cancelled') continue;
 
         const startTimeStr = event.start.dateTime || event.start.date;
         const endTimeStr = event.end?.dateTime || event.end?.date;
@@ -132,6 +135,8 @@ export async function pollCalendar(): Promise<void> {
         const title = event.summary || 'Reunión sin título';
 
         if (!meetUrl) continue;
+
+        activeUpcomingMeetEventIds.push(event.id);
 
         // Check blocklist
         const blockCheck = await isEventBlocked(user.id, { title, url: meetUrl, eventId: event.id });
@@ -188,6 +193,32 @@ export async function pollCalendar(): Promise<void> {
             recordingMode: mode,
           });
         }
+      }
+
+      // Reconcile: remove un-dispatched scheduled meetings in this window that no longer exist in Google Calendar
+      try {
+        if (activeUpcomingMeetEventIds.length > 0) {
+          await query(
+            `DELETE FROM scheduled_meetings
+             WHERE user_id = $1
+               AND start_time >= $2
+               AND start_time <= $3
+               AND dispatched = false
+               AND NOT (calendar_event_id = ANY($4::text[]))`,
+            [user.id, now, futureLimit, activeUpcomingMeetEventIds]
+          );
+        } else {
+          await query(
+            `DELETE FROM scheduled_meetings
+             WHERE user_id = $1
+               AND start_time >= $2
+               AND start_time <= $3
+               AND dispatched = false`,
+            [user.id, now, futureLimit]
+          );
+        }
+      } catch (reconcileErr) {
+        logger.warn(`Failed to reconcile scheduled meetings for ${user.email}:`, reconcileErr);
       }
     } catch (userErr: any) {
       logger.error(`Error polling calendar for user ${user.email}:`, userErr?.message || userErr);

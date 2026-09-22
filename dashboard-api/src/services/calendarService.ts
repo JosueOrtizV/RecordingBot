@@ -54,19 +54,32 @@ export async function syncUserCalendar(userId: string, customMin?: Date, customM
   const timeMin = customMin || new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const timeMax = customMax || new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
 
-  const res = await calendar.events.list({
-    calendarId: 'primary',
-    timeMin: timeMin.toISOString(),
-    timeMax: timeMax.toISOString(),
-    singleEvents: true,
-    orderBy: 'startTime',
-    maxResults: 250,
-  });
+  let pageToken: string | undefined = undefined;
+  const allEvents: calendar_v3.Schema$Event[] = [];
 
-  const events = res.data.items || [];
+  do {
+    const res: any = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin: timeMin.toISOString(),
+      timeMax: timeMax.toISOString(),
+      singleEvents: true,
+      orderBy: 'startTime',
+      maxResults: 250,
+      pageToken,
+    });
+
+    if (res.data.items) {
+      allEvents.push(...res.data.items);
+    }
+    pageToken = res.data.nextPageToken || undefined;
+  } while (pageToken);
+
   const processed: any[] = [];
+  const activeCalendarEventIds: string[] = [];
 
-  for (const event of events) {
+  for (const event of allEvents) {
+    if (event.status === 'cancelled') continue;
+
     const meetUrl = extractGoogleMeetUrl(event);
     if (!meetUrl) continue; // Only process Google Meet events
 
@@ -78,6 +91,8 @@ export async function syncUserCalendar(userId: string, customMin?: Date, customM
     const endTime = new Date(endStr);
     const title = event.summary || 'Reunión sin título';
     const eventId = event.id || `event_${Date.now()}`;
+
+    activeCalendarEventIds.push(eventId);
 
     const blockCheck = await isEventBlocked(userId, { title, url: meetUrl, eventId });
     const willRecord = !blockCheck.blocked;
@@ -103,6 +118,26 @@ export async function syncUserCalendar(userId: string, customMin?: Date, customM
       ...upsertRes.rows[0],
       blockReason: blockCheck.blocked ? blockCheck.reason : null,
     });
+  }
+
+  // Reconcile: Delete phantom / cancelled meetings in this time window
+  if (activeCalendarEventIds.length > 0) {
+    await query(
+      `DELETE FROM scheduled_meetings
+       WHERE user_id = $1
+         AND start_time >= $2
+         AND start_time <= $3
+         AND NOT (calendar_event_id = ANY($4::text[]))`,
+      [userId, timeMin, timeMax, activeCalendarEventIds]
+    );
+  } else {
+    await query(
+      `DELETE FROM scheduled_meetings
+       WHERE user_id = $1
+         AND start_time >= $2
+         AND start_time <= $3`,
+      [userId, timeMin, timeMax]
+    );
   }
 
   return processed;
