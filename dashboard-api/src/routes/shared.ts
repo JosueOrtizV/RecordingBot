@@ -21,8 +21,10 @@ router.get('/:token', async (req: Request, res: Response) => {
               r.share_access, r.share_token, r.created_at, r.started_at, r.completed_at,
               u.name as owner_name
        FROM recordings r
-       LEFT JOIN users u ON r.user_id = u.id
-       WHERE r.share_token::text = $1`,
+       LEFT JOIN users u ON COALESCE(r.owner_user_id, r.user_id) = u.id
+       WHERE r.share_token::text = $1
+       ORDER BY (r.user_id = r.owner_user_id) DESC, r.created_at ASC
+       LIMIT 1`,
       [token]
     );
 

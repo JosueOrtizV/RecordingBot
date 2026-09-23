@@ -340,6 +340,18 @@ router.put('/:id/share', requireAuth, async (req: Request, res: Response) => {
     const recording = recRes.rows[0];
     let shareToken = recording.share_token;
 
+    // If this recording belongs to a dedup group and doesn't have a share_token yet,
+    // check if any other recording in the group already has one so we reuse it
+    if (recording.dedup_group_id && !shareToken) {
+      const groupTokenRes = await query(
+        'SELECT share_token FROM recordings WHERE dedup_group_id = $1 AND share_token IS NOT NULL LIMIT 1',
+        [recording.dedup_group_id]
+      );
+      if (groupTokenRes.rows.length > 0 && groupTokenRes.rows[0].share_token) {
+        shareToken = groupTokenRes.rows[0].share_token;
+      }
+    }
+
     // Generate token if enabling sharing and no token exists yet
     if ((access === 'public' || access === 'registered') && !shareToken) {
       const { v4: uuidv4 } = await import('uuid');
@@ -370,7 +382,7 @@ router.put('/:id/share', requireAuth, async (req: Request, res: Response) => {
       );
     }
 
-    const updated = updateRes.rows[0];
+    const updated = updateRes.rows.find((r: any) => r.id === id) || updateRes.rows[0];
 
     res.json({
       success: true,

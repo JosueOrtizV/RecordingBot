@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS recordings (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_recordings_share_token ON recordings(share_token) WHERE share_token IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_recordings_share_token ON recordings(share_token) WHERE share_token IS NOT NULL;
 
 -- 5. Reuniones programadas detectadas (visible en el panel)
 CREATE TABLE IF NOT EXISTS scheduled_meetings (
