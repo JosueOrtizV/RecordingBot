@@ -646,8 +646,9 @@ class DiskUploader implements IUploader {
               '-y',
               '-i', inputPath,
               '-vn',
+              '-ac', '1',
               '-c:a', 'libmp3lame',
-              '-b:a', '128k',
+              '-b:a', '64k',
               outputPath,
             ], { maxBuffer: 10 * 1024 * 1024 });
             if (fs.existsSync(outputPath)) {
