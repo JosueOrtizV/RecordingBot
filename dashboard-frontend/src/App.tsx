@@ -16,6 +16,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { TermsPage } from './pages/TermsPage';
+import { LandingPage } from './pages/LandingPage';
 import { Loader2 } from 'lucide-react';
 
 const ProtectedLayout: React.FC = () => {
@@ -51,12 +52,33 @@ const ProtectedLayout: React.FC = () => {
   );
 };
 
+const RootRoute: React.FC = () => {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center text-slate-600 dark:text-slate-400 gap-3 transition-colors duration-200">
+        <Loader2 className="w-6 h-6 animate-spin text-sky-500" />
+        <span className="text-sm font-medium">Cargando...</span>
+      </div>
+    );
+  }
+
+  if (user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <LandingPage />;
+};
+
 export const App: React.FC = () => {
   return (
     <ThemeProvider>
       <AuthProvider>
         <BrowserRouter>
           <Routes>
+            {/* Public landing page (for Google OAuth verification & public visitors) */}
+            <Route path="/" element={<RootRoute />} />
             <Route path="/login" element={<LoginPage />} />
             {/* Public standalone shared recording view */}
             <Route path="/r/:token" element={<SharedRecordingPage />} />
@@ -72,9 +94,8 @@ export const App: React.FC = () => {
               <Route path="/recordings/:id" element={<RecordingDetailPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/admin/users" element={<AdminUsersPage />} />
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
             </Route>
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>
