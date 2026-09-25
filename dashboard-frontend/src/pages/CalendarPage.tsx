@@ -10,7 +10,6 @@ import {
   ChevronRight,
   RefreshCw,
   Clock,
-  Video,
   Check,
   Ban,
   ExternalLink,
@@ -245,7 +244,7 @@ export const CalendarPage: React.FC = () => {
       setModalMode('details');
       setSelectedMeeting(null);
       showToast.success(
-        willRecord ? 'Grabación activada' : 'Grabación pausada',
+        willRecord ? 'Grabación activada' : 'Grabación desactivada',
         scope === 'series'
           ? (willRecord ? 'El bot asistirá a todos los eventos de esta serie.' : 'Toda la serie ha sido excluida del bot.')
           : (willRecord ? 'El bot asistirá a esta reunión.' : 'Esta reunión ha sido excluida del bot.')
@@ -991,10 +990,10 @@ export const CalendarPage: React.FC = () => {
                                           )}`
                                         )
                                       }
-                                      title="Entrar ahora mismo con el bot"
+                                      title="Enviar bot a grabar ahora mismo"
                                       className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-sky-600 dark:text-sky-400 transition-colors border border-slate-200 dark:border-slate-700 cursor-pointer"
                                     >
-                                      <Video className="w-4 h-4" />
+                                      <Bot className="w-4 h-4" />
                                     </button>
                                   </div>
                                 </div>
@@ -1050,8 +1049,9 @@ export const CalendarPage: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Time & Link Details */}
+                {/* Time, Link & Bot Status Details */}
                 <div className="space-y-3 text-xs">
+                  {/* Date & Time */}
                   <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200/80 dark:border-slate-800">
                     <Clock className="w-4 h-4 text-sky-500 shrink-0" />
                     <div>
@@ -1064,12 +1064,13 @@ export const CalendarPage: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Google Meet Link with human join button */}
                   <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200/80 dark:border-slate-800">
-                    <div className="truncate mr-2">
+                    <div className="truncate mr-3">
                       <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
                         Enlace de Google Meet
                       </p>
-                      <p className="font-mono text-slate-700 dark:text-slate-300 truncate text-[11px] mt-0.5">
+                      <p className="font-mono text-slate-700 dark:text-slate-300 truncate text-[11px] mt-0.5 select-all">
                         {selectedMeeting.meet_url}
                       </p>
                     </div>
@@ -1077,10 +1078,51 @@ export const CalendarPage: React.FC = () => {
                       href={selectedMeeting.meet_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="p-2 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 hover:bg-sky-500/20 transition-colors shrink-0"
+                      className="px-3 py-1.5 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 hover:bg-sky-500/20 font-semibold transition-colors flex items-center gap-1.5 shrink-0 text-xs"
+                      title="Abrir en Google Meet (para unirte tú)"
                     >
-                      <ExternalLink className="w-4 h-4" />
+                      <span>Unirme</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
                     </a>
+                  </div>
+
+                  {/* Bot Automatic Recording Status Card */}
+                  <div
+                    className={`p-3 rounded-2xl border flex items-center gap-3 transition-colors ${
+                      selectedMeeting.will_record
+                        ? 'bg-emerald-500/5 dark:bg-emerald-950/20 border-emerald-500/20'
+                        : 'bg-slate-50 dark:bg-slate-950/50 border-slate-200 dark:border-slate-800'
+                    }`}
+                  >
+                    <div
+                      className={`p-2 rounded-xl shrink-0 ${
+                        selectedMeeting.will_record
+                          ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                          : 'bg-slate-200/60 dark:bg-slate-800 text-slate-400 dark:text-slate-500'
+                      }`}
+                    >
+                      <Bot className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p
+                        className={`font-semibold text-xs ${
+                          selectedMeeting.will_record
+                            ? 'text-emerald-900 dark:text-emerald-200'
+                            : 'text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        {selectedMeeting.will_record
+                          ? 'Grabación automática programada'
+                          : 'Grabación automática desactivada'}
+                      </p>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                        {selectedMeeting.will_record
+                          ? 'El bot asistirá automáticamente al iniciar la reunión'
+                          : (selectedMeeting.block_reason
+                              ? `Excluida por regla: "${selectedMeeting.block_reason}"`
+                              : 'El bot no asistirá a esta reunión')}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -1093,16 +1135,21 @@ export const CalendarPage: React.FC = () => {
                         ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20 hover:bg-rose-500/20'
                         : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
                     }`}
+                    title={
+                      selectedMeeting.will_record
+                        ? 'Desactivar o excluir de grabación automática'
+                        : 'Programar para que el bot asista a grabar'
+                    }
                   >
                     {selectedMeeting.will_record ? (
                       <>
                         <Ban className="w-4 h-4" />
-                        <span>Pausar Grabación</span>
+                        <span>Desactivar Grabación</span>
                       </>
                     ) : (
                       <>
                         <Check className="w-4 h-4" />
-                        <span>Activar Bot</span>
+                        <span>Activar Grabación</span>
                       </>
                     )}
                   </button>
@@ -1116,10 +1163,11 @@ export const CalendarPage: React.FC = () => {
                         )}`
                       );
                     }}
+                    title="Mandar al bot a entrar y grabar en este momento"
                     className="py-3 px-4 rounded-2xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold shadow-md shadow-sky-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Video className="w-4 h-4" />
-                    <span>Entrar Ahora</span>
+                    <Bot className="w-4 h-4" />
+                    <span>Enviar Bot Ahora</span>
                   </button>
                 </div>
               </>
@@ -1140,7 +1188,7 @@ export const CalendarPage: React.FC = () => {
                       ) : (
                         <Ban className="w-3.5 h-3.5" />
                       )}
-                      <span>{!selectedMeeting.will_record ? 'Activar Grabación' : 'Pausar Grabación'}</span>
+                      <span>{!selectedMeeting.will_record ? 'Activar Grabación' : 'Desactivar Grabación'}</span>
                     </div>
                     <h2 className="text-base font-extrabold text-slate-900 dark:text-slate-100 leading-tight">
                       {selectedMeeting.title}
@@ -1160,7 +1208,7 @@ export const CalendarPage: React.FC = () => {
                 <p className="text-xs text-slate-600 dark:text-slate-400">
                   {!selectedMeeting.will_record
                     ? '¿Deseas activar la grabación solo para esta reunión o para todas las repeticiones?'
-                    : '¿Deseas pausar la grabación solo para esta reunión o excluir todas las repeticiones de esta serie?'}
+                    : '¿Deseas desactivar la grabación solo para esta reunión o excluir todas las repeticiones de esta serie?'}
                 </p>
 
                 <div className="space-y-3">
@@ -1219,7 +1267,7 @@ export const CalendarPage: React.FC = () => {
                         <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                           {!selectedMeeting.will_record
                             ? 'Elimina la regla de bloqueo y reactiva todas las reuniones con este título'
-                            : 'Agrega una regla a "Reuniones Excluidas" (Configuración) para pausar todas las fechas'}
+                            : 'Agrega una regla a "Reuniones Excluidas" (Configuración) para no grabar ninguna fecha de esta serie'}
                         </p>
                       </div>
                     </div>
