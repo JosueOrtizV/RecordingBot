@@ -14,6 +14,8 @@ import { RecordingDetailPage } from './pages/RecordingDetailPage';
 import { SharedRecordingPage } from './pages/SharedRecordingPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
+import { PrivacyPage } from './pages/PrivacyPage';
+import { TermsPage } from './pages/TermsPage';
 import { Loader2 } from 'lucide-react';
 
 const ProtectedLayout: React.FC = () => {
@@ -58,6 +60,9 @@ export const App: React.FC = () => {
             <Route path="/login" element={<LoginPage />} />
             {/* Public standalone shared recording view */}
             <Route path="/r/:token" element={<SharedRecordingPage />} />
+            {/* Public legal pages for OAuth verification */}
+            <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/terms" element={<TermsPage />} />
 
             <Route element={<ProtectedLayout />}>
               <Route path="/dashboard" element={<DashboardPage />} />

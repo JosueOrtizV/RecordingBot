@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { AlertTriangle, Radio, Calendar, HardDrive, Cpu, Sun, Moon } from 'lucide-react';
@@ -108,6 +108,16 @@ export const LoginPage: React.FC = () => {
             </div>
             <span>Transcripciones automáticas con IA y resumen</span>
           </div>
+        </div>
+
+        <div className="mt-6 flex items-center justify-center gap-4 text-[11px] text-slate-400 dark:text-slate-500">
+          <Link to="/privacy" className="hover:underline hover:text-slate-600 dark:hover:text-slate-300">
+            Política de Privacidad
+          </Link>
+          <span>•</span>
+          <Link to="/terms" className="hover:underline hover:text-slate-600 dark:hover:text-slate-300">
+            Condiciones del Servicio
+          </Link>
         </div>
       </div>
     </div>
