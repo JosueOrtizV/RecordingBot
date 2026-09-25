@@ -175,10 +175,20 @@ export const CalendarPage: React.FC = () => {
 
   const navigate = useNavigate();
 
+  const deduplicateMeetings = (list: ScheduledMeeting[]): ScheduledMeeting[] => {
+    const seen = new Set<string>();
+    return list.filter((m) => {
+      const key = m.id || `${m.calendar_event_id}_${m.start_time}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
   const loadMeetings = async () => {
     try {
       const data = await fetchApi<{ meetings: ScheduledMeeting[] }>('/api/calendar/upcoming');
-      setMeetings(data.meetings || []);
+      setMeetings(deduplicateMeetings(data.meetings || []));
     } catch (err) {
       console.warn('Error loading calendar meetings:', err);
     } finally {
@@ -196,8 +206,9 @@ export const CalendarPage: React.FC = () => {
       const data = await fetchApi<{ success: boolean; meetings: ScheduledMeeting[] }>('/api/calendar/refresh', {
         method: 'POST',
       });
-      setMeetings(data.meetings || []);
-      showToast.success('Calendario sincronizado', `${data.meetings?.length || 0} reuniones actualizadas.`);
+      const unique = deduplicateMeetings(data.meetings || []);
+      setMeetings(unique);
+      showToast.success('Calendario sincronizado', `${unique.length} reuniones actualizadas.`);
     } catch (err: any) {
       showToast.error('Error al sincronizar calendario', err.message || 'No se pudo conectar con Google Calendar.');
     } finally {

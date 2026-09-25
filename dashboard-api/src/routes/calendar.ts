@@ -6,43 +6,50 @@ import { query } from '../db.js';
 
 const router = Router();
 
+const GET_CALENDAR_MEETINGS_SQL = `
+  SELECT sm.*, 
+         CASE WHEN sm.manual_override = true THEN NULL ELSE mb.reason END as block_reason,
+         CASE WHEN sm.manual_override = true THEN NULL ELSE mb.id END as block_rule_id,
+         CASE 
+           WHEN sm.manual_override IS NOT NULL THEN sm.manual_override
+           WHEN mb.id IS NOT NULL THEN false 
+           ELSE sm.will_record 
+         END as will_record
+  FROM scheduled_meetings sm
+  LEFT JOIN LATERAL (
+    SELECT mb.id, mb.reason
+    FROM meeting_blocklist mb
+    WHERE mb.user_id = sm.user_id AND (
+      (mb.match_type = 'url' AND sm.meet_url ILIKE '%' || mb.match_value || '%') OR
+      (mb.match_type = 'title_contains' AND sm.title ILIKE '%' || mb.match_value || '%') OR
+      (mb.match_type = 'event_id' AND sm.calendar_event_id = mb.match_value)
+    )
+    ORDER BY mb.created_at DESC
+    LIMIT 1
+  ) mb ON true
+  WHERE sm.user_id = $1 AND sm.start_time >= NOW() - INTERVAL '30 days' AND sm.start_time <= NOW() + INTERVAL '60 days'
+  ORDER BY sm.start_time ASC
+`;
+
 // GET /api/calendar/upcoming
 router.get('/upcoming', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
     
     // Check if we have meetings in DB for the past 30 days and upcoming 60 days
-    const dbRes = await query(
-      `SELECT sm.*, 
-              CASE WHEN sm.manual_override = true THEN NULL ELSE mb.reason END as block_reason,
-              CASE WHEN sm.manual_override = true THEN NULL ELSE mb.id END as block_rule_id,
-              CASE 
-                WHEN sm.manual_override IS NOT NULL THEN sm.manual_override
-                WHEN mb.id IS NOT NULL THEN false 
-                ELSE sm.will_record 
-              END as will_record
-       FROM scheduled_meetings sm
-       LEFT JOIN meeting_blocklist mb ON mb.user_id = sm.user_id AND (
-         (mb.match_type = 'url' AND sm.meet_url ILIKE '%' || mb.match_value || '%') OR
-         (mb.match_type = 'title_contains' AND sm.title ILIKE '%' || mb.match_value || '%') OR
-         (mb.match_type = 'event_id' AND sm.calendar_event_id = mb.match_value)
-       )
-       WHERE sm.user_id = $1 AND sm.start_time >= NOW() - INTERVAL '30 days' AND sm.start_time <= NOW() + INTERVAL '60 days'
-       ORDER BY sm.start_time ASC`,
-      [userId]
-    );
+    let dbRes = await query(GET_CALENDAR_MEETINGS_SQL, [userId]);
 
     // If no meetings found or explicitly requested, sync
-    let meetings = dbRes.rows;
-    if (meetings.length === 0) {
+    if (dbRes.rows.length === 0) {
       try {
-        meetings = await syncUserCalendar(userId);
+        await syncUserCalendar(userId);
+        dbRes = await query(GET_CALENDAR_MEETINGS_SQL, [userId]);
       } catch (syncErr: any) {
         console.warn('Auto-sync failed, returning empty list:', syncErr.message);
       }
     }
 
-    res.json({ meetings });
+    res.json({ meetings: dbRes.rows });
   } catch (err: any) {
     console.error('Error fetching upcoming meetings:', err);
     res.status(500).json({ error: err.message || 'Error al obtener reuniones' });
@@ -59,25 +66,7 @@ router.post('/refresh', requireAuth, async (req: Request, res: Response) => {
     ]);
     
     // Return all meetings with blocklist joined
-    const dbRes = await query(
-      `SELECT sm.*, 
-              CASE WHEN sm.manual_override = true THEN NULL ELSE mb.reason END as block_reason,
-              CASE WHEN sm.manual_override = true THEN NULL ELSE mb.id END as block_rule_id,
-              CASE 
-                WHEN sm.manual_override IS NOT NULL THEN sm.manual_override
-                WHEN mb.id IS NOT NULL THEN false 
-                ELSE sm.will_record 
-              END as will_record
-       FROM scheduled_meetings sm
-       LEFT JOIN meeting_blocklist mb ON mb.user_id = sm.user_id AND (
-         (mb.match_type = 'url' AND sm.meet_url ILIKE '%' || mb.match_value || '%') OR
-         (mb.match_type = 'title_contains' AND sm.title ILIKE '%' || mb.match_value || '%') OR
-         (mb.match_type = 'event_id' AND sm.calendar_event_id = mb.match_value)
-       )
-       WHERE sm.user_id = $1 AND sm.start_time >= NOW() - INTERVAL '30 days' AND sm.start_time <= NOW() + INTERVAL '60 days'
-       ORDER BY sm.start_time ASC`,
-      [userId]
-    );
+    const dbRes = await query(GET_CALENDAR_MEETINGS_SQL, [userId]);
 
     res.json({ success: true, count: dbRes.rows.length, meetings: dbRes.rows });
   } catch (err: any) {
