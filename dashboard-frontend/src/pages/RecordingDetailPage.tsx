@@ -144,7 +144,7 @@ export const RecordingDetailPage: React.FC = () => {
     );
   }
 
-  const recordingDate = new Date(recording.created_at);
+  const recordingDate = new Date(recording.started_at || recording.created_at);
   const isVideo = recording.recording_mode === 'video';
   const isAudio = recording.recording_mode === 'audio';
   const driveFileId =
@@ -230,7 +230,7 @@ export const RecordingDetailPage: React.FC = () => {
             <span>•</span>
             <span className="flex items-center gap-1 font-mono">
               <Clock className="w-3.5 h-3.5 text-slate-400" />
-              {format(recordingDate, 'HH:mm')} hrs ({formatDuration(recording.duration_seconds)})
+              {recording.started_at_local ? `${recording.started_at_local.slice(0, 5)} hrs` : `${format(recordingDate, 'HH:mm')} hrs`} ({formatDuration(recording.duration_seconds)})
             </span>
             {recording.meeting_url && (
               <>
@@ -604,7 +604,7 @@ export const RecordingDetailPage: React.FC = () => {
                   Hora de Inicio
                 </div>
                 <div className="text-xs font-bold text-slate-900 dark:text-slate-100 font-mono mt-0.5">
-                  {format(recordingDate, 'HH:mm')} hrs
+                  {recording.started_at_local ? `${recording.started_at_local.slice(0, 5)} hrs` : `${format(recordingDate, 'HH:mm')} hrs`}
                 </div>
               </div>
 

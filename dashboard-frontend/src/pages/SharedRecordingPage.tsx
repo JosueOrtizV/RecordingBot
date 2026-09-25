@@ -220,7 +220,7 @@ export const SharedRecordingPage: React.FC = () => {
                   <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400 font-medium pt-1">
                     <span className="flex items-center gap-1.5">
                       <Calendar className="w-3.5 h-3.5 text-indigo-500" />
-                      {format(new Date(recording.created_at), "d 'de' MMMM, yyyy", { locale: es })}
+                      {format(new Date(recording.started_at || recording.created_at), "d 'de' MMMM, yyyy", { locale: es })}
                     </span>
                     <span>•</span>
                     <span className="flex items-center gap-1 font-mono">

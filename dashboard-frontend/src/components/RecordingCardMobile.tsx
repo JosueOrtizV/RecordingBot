@@ -34,7 +34,7 @@ export const RecordingCardMobile: React.FC<RecordingCardMobileProps> = ({
 }) => {
   const [expanded, setExpanded] = useState(false);
   const navigate = useNavigate();
-  const date = new Date(recording.created_at);
+  const date = new Date(recording.started_at || recording.created_at);
 
   const formatDuration = (seconds?: number) => {
     if (!seconds || seconds <= 0) return '0s';

@@ -275,7 +275,7 @@ export const DashboardPage: React.FC = () => {
                           {rec.meeting_title || 'Reunión'}
                         </Link>
                         <p className="text-slate-500 dark:text-slate-400 text-[11px] flex items-center gap-2 mt-0.5">
-                          <span>{new Date(rec.created_at).toLocaleDateString('es-MX', { month: 'short', day: 'numeric' })}</span>
+                          <span>{new Date(rec.started_at || rec.created_at).toLocaleDateString('es-MX', { month: 'short', day: 'numeric' })}</span>
                           <span>•</span>
                           <span className="flex items-center gap-1">
                             <Clock className="w-3 h-3 text-slate-400" />

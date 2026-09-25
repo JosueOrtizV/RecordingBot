@@ -456,7 +456,7 @@ export const RecordingsPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800/60">
                 {recordings.map((rec) => {
-                  const date = new Date(rec.created_at);
+                  const date = new Date(rec.started_at || rec.created_at);
 
                   return (
                     <tr
