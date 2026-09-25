@@ -1,8 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { query } from '../db.js';
-import { setDriveFilePublic, setDriveFilePrivate } from '../services/googleAuth.js';
+import { setDriveFilePublic, setDriveFilePrivate, getUserOAuth2Client } from '../services/googleAuth.js';
 import { generateMeetingMinutes } from '../services/gemini.js';
+import { google } from 'googleapis';
+import jwt from 'jsonwebtoken';
+import { config } from '../config.js';
 
 const router = Router();
 
@@ -140,6 +143,7 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
 
     const recordingRes = await query(
       `SELECT r.*,
+              TO_CHAR(COALESCE(r.started_at, r.created_at) AT TIME ZONE 'America/Mexico_City', 'HH24:MI:SS') as started_at_local,
               u_owner.name as owner_name,
               u_owner.email as owner_email,
               (COALESCE(r.owner_user_id, r.user_id) = $2) as is_drive_owner
@@ -178,6 +182,138 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/recordings/:id/stream - Direct seeking media stream from Google Drive
+router.get('/:id/stream', async (req: Request, res: Response) => {
+  try {
+    const id = req.params.id;
+    const token = req.query.token as string | undefined;
+
+    // 1. Authenticate either via user session (cookie or header) or share token
+    let userId: string | null = null;
+    let jwtToken = req.cookies?.token;
+    if (!jwtToken && req.headers.authorization?.startsWith('Bearer ')) {
+      jwtToken = req.headers.authorization.split(' ')[1];
+    }
+    if (jwtToken) {
+      try {
+        const decoded = jwt.verify(jwtToken, config.jwtSecret) as { userId: string };
+        userId = decoded.userId;
+      } catch (e) {
+        // invalid jwt token, proceed to check share token
+      }
+    }
+
+    // 2. Fetch recording details
+    const recRes = await query(
+      `SELECT r.id, r.user_id, r.owner_user_id, r.dedup_group_id, r.drive_file_id,
+              r.recording_mode, r.share_token, r.share_access
+       FROM recordings r
+       WHERE r.id = $1`,
+      [id]
+    );
+
+    if (recRes.rows.length === 0) {
+      res.status(404).json({ error: 'Grabación no encontrada' });
+      return;
+    }
+
+    const recording = recRes.rows[0];
+
+    // Check authorization:
+    let isAuthorized = false;
+
+    // User owns or belongs to the dedup group
+    if (userId) {
+      if (recording.user_id === userId) {
+        isAuthorized = true;
+      } else if (recording.dedup_group_id) {
+        const checkGroup = await query(
+          'SELECT 1 FROM recordings WHERE dedup_group_id = $1 AND user_id = $2 LIMIT 1',
+          [recording.dedup_group_id, userId]
+        );
+        if (checkGroup.rows.length > 0) {
+          isAuthorized = true;
+        }
+      }
+    }
+
+    // Or authorized via valid share token
+    if (!isAuthorized && token && recording.share_token === token) {
+      if (recording.share_access === 'public') {
+        isAuthorized = true;
+      } else if (recording.share_access === 'registered' && userId) {
+        isAuthorized = true;
+      }
+    }
+
+    if (!isAuthorized) {
+      res.status(403).json({ error: 'No tienes permiso para reproducir esta grabación' });
+      return;
+    }
+
+    if (!recording.drive_file_id) {
+      res.status(404).json({ error: 'No hay archivo multimedia asociado en Google Drive' });
+      return;
+    }
+
+    // 3. Resolve Drive Owner to get proper OAuth tokens
+    const driveOwnerId = recording.owner_user_id || recording.user_id;
+    const auth = await getUserOAuth2Client(driveOwnerId);
+    const drive = google.drive({ version: 'v3', auth });
+
+    // 4. Request stream from Google Drive with Range header forwarding
+    const rangeHeader = req.headers.range;
+    const driveStream = await drive.files.get(
+      {
+        fileId: recording.drive_file_id,
+        alt: 'media',
+      },
+      {
+        responseType: 'stream',
+        headers: rangeHeader ? { Range: rangeHeader } : {},
+      }
+    );
+
+    // Forward status (206 for partial content, 200 for full stream)
+    res.status(driveStream.status || (rangeHeader ? 206 : 200));
+
+    // Forward essential media headers
+    if (driveStream.headers['content-range']) {
+      res.setHeader('Content-Range', driveStream.headers['content-range']);
+    }
+    if (driveStream.headers['content-length']) {
+      res.setHeader('Content-Length', driveStream.headers['content-length']);
+    }
+    if (driveStream.headers['content-type']) {
+      res.setHeader('Content-Type', driveStream.headers['content-type']);
+    } else {
+      res.setHeader('Content-Type', recording.recording_mode === 'video' ? 'video/mp4' : 'audio/mpeg');
+    }
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+
+    (driveStream.data as any).on('error', (err: any) => {
+      console.error('Error in Drive stream:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Error al transmitir desde Google Drive' });
+      }
+    });
+
+    req.on('close', () => {
+      if ((driveStream.data as any).destroy) {
+        (driveStream.data as any).destroy();
+      }
+    });
+
+    (driveStream.data as any).pipe(res);
+  } catch (err: any) {
+    console.error('Stream error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message || 'Error de streaming' });
+    }
   }
 });
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { fetchApi } from '../api/client';
 import { Recording } from '../types';
@@ -22,6 +22,8 @@ import {
   Info,
   Square,
   XCircle,
+  RotateCcw,
+  RotateCw,
 } from 'lucide-react';
 import { TranscriptView } from '../components/TranscriptView';
 import { MinutesView } from '../components/MinutesView';
@@ -44,6 +46,39 @@ export const RecordingDetailPage: React.FC = () => {
   const [transcriptModalOpen, setTranscriptModalOpen] = useState(false);
   const [activeMobileTab, setActiveMobileTab] = useState<'media' | 'transcript' | 'minutes'>('media');
   const [rightColumnTab, setRightColumnTab] = useState<'transcript' | 'minutes'>('minutes');
+
+  // Media Player State & Refs
+  const mediaRef = useRef<HTMLMediaElement | null>(null);
+  const mediaContainerRef = useRef<HTMLDivElement | null>(null);
+  const [currentTime, setCurrentTime] = useState<number>(0);
+  const [playerViewMode, setPlayerViewMode] = useState<'native' | 'drive'>('native');
+  const [playbackRate, setPlaybackRate] = useState<number>(1);
+
+  const handleSeek = (seconds: number) => {
+    if (playerViewMode !== 'native') {
+      setPlayerViewMode('native');
+    }
+
+    if (mediaRef.current) {
+      mediaRef.current.currentTime = seconds;
+      mediaRef.current.play().catch(() => {});
+    }
+
+    if (window.innerWidth < 1024) {
+      setActiveMobileTab('media');
+    }
+
+    setTimeout(() => {
+      mediaContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 100);
+  };
+
+  const handleSpeedChange = (speed: number) => {
+    setPlaybackRate(speed);
+    if (mediaRef.current) {
+      mediaRef.current.playbackRate = speed;
+    }
+  };
 
   const loadRecording = async () => {
     if (!id) return;
@@ -329,30 +364,186 @@ export const RecordingDetailPage: React.FC = () => {
         <div className={`lg:col-span-6 space-y-6 ${activeMobileTab === 'media' ? 'block' : 'hidden lg:block'}`}>
           
           {/* Media Player Card */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-4 sm:p-5 shadow-sm space-y-4 transition-colors overflow-hidden">
+          <div
+            ref={mediaContainerRef}
+            className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-4 sm:p-5 shadow-sm space-y-4 transition-colors overflow-hidden"
+          >
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm flex items-center gap-2">
                 {isVideo ? <Video className="w-4 h-4 text-sky-500" /> : <Mic className="w-4 h-4 text-emerald-500" />}
                 {isVideo ? 'Reproductor de Video' : isAudio ? 'Reproductor de Audio' : 'Grabación en Drive'}
               </h3>
 
-              {driveFileId && (
-                <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">
-                  ID: {driveFileId.substring(0, 10)}...
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {driveFileId && (
+                  <button
+                    type="button"
+                    onClick={() => setPlayerViewMode(playerViewMode === 'native' ? 'drive' : 'native')}
+                    className="text-[11px] font-semibold px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
+                    title={playerViewMode === 'native' ? 'Cambiar a vista previa de Google Drive' : 'Cambiar a reproductor sincronizado'}
+                  >
+                    {playerViewMode === 'native' ? 'Vista Drive' : 'Reproductor Sincronizado'}
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* Google Drive Video Player Iframe / Audio Player / Placeholder */}
+            {/* Content: Native Player or Drive Iframe */}
             {driveFileId ? (
-              <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-inner">
-                <iframe
-                  src={`https://drive.google.com/file/d/${driveFileId}/preview`}
-                  title={recording.meeting_title}
-                  className="w-full h-full border-0"
-                  allow="autoplay; encrypted-media; fullscreen"
-                />
-              </div>
+              playerViewMode === 'native' ? (
+                isVideo ? (
+                  /* Native Video Player */
+                  <div className="space-y-3">
+                    <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-black border border-slate-800 shadow-inner">
+                      <video
+                        ref={mediaRef as React.RefObject<HTMLVideoElement>}
+                        src={`/api/recordings/${recording.id}/stream`}
+                        onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                        controls
+                        playsInline
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-xs px-1">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (mediaRef.current) {
+                              mediaRef.current.currentTime = Math.max(0, mediaRef.current.currentTime - 10);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
+                          title="Retroceder 10 segundos"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>-10s</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (mediaRef.current) {
+                              mediaRef.current.currentTime = mediaRef.current.currentTime + 10;
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs border border-slate-200 dark:border-slate-700 transition-all cursor-pointer"
+                          title="Adelantar 10 segundos"
+                        >
+                          <RotateCw className="w-3 h-3" />
+                          <span>+10s</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                        {[1, 1.25, 1.5, 2].map((speed) => (
+                          <button
+                            key={speed}
+                            type="button"
+                            onClick={() => handleSpeedChange(speed)}
+                            className={`px-2 py-0.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                              playbackRate === speed
+                                ? 'bg-indigo-600 text-white shadow-2xs'
+                                : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                            }`}
+                          >
+                            {speed}x
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Native Audio Player */
+                  <div className="space-y-3">
+                    <div className="p-6 rounded-2xl bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-800 text-white flex flex-col items-center justify-center space-y-4 shadow-inner">
+                      <div className="relative">
+                        <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/10">
+                          <Mic className="w-7 h-7" />
+                        </div>
+                        <span className="absolute -bottom-1 -right-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-emerald-500 text-slate-950 uppercase tracking-wider">
+                          MP3
+                        </span>
+                      </div>
+
+                      <div className="text-center max-w-sm">
+                        <p className="font-extrabold text-sm text-slate-100 truncate">
+                          {recording.meeting_title || 'Audio de la reunión'}
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Haz clic en cualquier minuto de la transcripción para saltar directamente a ese audio.
+                        </p>
+                      </div>
+
+                      {/* Native HTML5 Audio Tag */}
+                      <audio
+                        ref={mediaRef as React.RefObject<HTMLAudioElement>}
+                        src={`/api/recordings/${recording.id}/stream`}
+                        onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                        controls
+                        className="w-full max-w-md accent-indigo-500"
+                      />
+
+                      {/* Quick skip & speed buttons */}
+                      <div className="flex items-center gap-2 pt-1 flex-wrap justify-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (mediaRef.current) {
+                              mediaRef.current.currentTime = Math.max(0, mediaRef.current.currentTime - 10);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition-all active:scale-95 cursor-pointer"
+                          title="Retroceder 10 segundos"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>-10s</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (mediaRef.current) {
+                              mediaRef.current.currentTime = mediaRef.current.currentTime + 10;
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition-all active:scale-95 cursor-pointer"
+                          title="Adelantar 10 segundos"
+                        >
+                          <RotateCw className="w-3 h-3" />
+                          <span>+10s</span>
+                        </button>
+
+                        <div className="flex items-center gap-1 ml-2 bg-slate-800/80 p-0.5 rounded-xl border border-slate-700/80">
+                          {[1, 1.25, 1.5, 2].map((speed) => (
+                            <button
+                              key={speed}
+                              type="button"
+                              onClick={() => handleSpeedChange(speed)}
+                              className={`px-2 py-0.5 text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                                playbackRate === speed
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {speed}x
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              ) : (
+                /* Google Drive Video Player Iframe */
+                <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-inner">
+                  <iframe
+                    src={`https://drive.google.com/file/d/${driveFileId}/preview`}
+                    title={recording.meeting_title}
+                    className="w-full h-full border-0"
+                    allow="autoplay; encrypted-media; fullscreen"
+                  />
+                </div>
+              )
             ) : recording.drive_url ? (
               <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
                 <HardDrive className="w-8 h-8 text-emerald-500 mx-auto" />
@@ -529,7 +720,12 @@ export const RecordingDetailPage: React.FC = () => {
                 transcript={recording.transcript_text}
                 meetingTitle={recording.meeting_title}
                 recordingId={recording.id}
+                startedAt={recording.started_at}
+                startedAtLocal={recording.started_at_local}
+                durationSeconds={recording.duration_seconds}
                 onOpenModal={() => setTranscriptModalOpen(true)}
+                onSeek={handleSeek}
+                currentTime={currentTime}
               />
             )}
           </div>

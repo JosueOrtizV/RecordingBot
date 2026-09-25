@@ -1,20 +1,66 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Copy, Download, Check, FileText, Users, MessageSquare, X, Maximize2 } from 'lucide-react';
+import { Search, Copy, Download, Check, FileText, Users, MessageSquare, X, Maximize2, Play } from 'lucide-react';
 import { TranscriptModal } from './TranscriptModal';
 
 interface TranscriptViewProps {
   transcript: string | null | undefined;
   meetingTitle?: string;
   recordingId?: string;
+  startedAt?: string;
+  startedAtLocal?: string;
+  durationSeconds?: number;
   onOpenModal?: () => void;
+  onSeek?: (seconds: number) => void;
+  currentTime?: number;
 }
 
 interface SpeakerBlock {
   id: string;
   speaker: string;
   timestamp?: string;
+  relativeSeconds?: number;
+  relativeTimeStr?: string;
   text: string;
   raw: string;
+}
+
+function parseTimestampToSeconds(ts?: string): number {
+  if (!ts) return 0;
+  const parts = ts.trim().split(':').map(Number);
+  if (parts.length === 2) {
+    return (parts[0] || 0) * 60 + (parts[1] || 0);
+  } else if (parts.length === 3) {
+    return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+  }
+  return 0;
+}
+
+function formatRelativeTime(seconds: number): string {
+  if (seconds < 0) seconds = 0;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) {
+    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function getLocalStartTimeFromIso(isoString?: string): string {
+  if (!isoString) return '';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return '';
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'America/Mexico_City',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(d);
+  } catch (e) {
+    return '';
+  }
 }
 
 const SPEAKER_PALETTES = [
@@ -72,12 +118,22 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
   transcript,
   meetingTitle,
   recordingId,
+  startedAt,
+  startedAtLocal,
+  durationSeconds,
   onOpenModal,
+  onSeek,
+  currentTime,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSpeaker, setSelectedSpeaker] = useState<string>('all');
   const [copied, setCopied] = useState(false);
+
+  // Compute base start time for relative offset calculation (format HH:MM:SS in Mexico City)
+  const baseStartTimeStr = useMemo(() => {
+    return startedAtLocal || getLocalStartTimeFromIso(startedAt);
+  }, [startedAtLocal, startedAt]);
 
   // Parse raw text into structured speaker blocks
   const { blocks, speakers, totalWords } = useMemo(() => {
@@ -95,10 +151,35 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
       if (currentTextLines.length > 0) {
         const text = currentTextLines.join(' ').trim();
         if (text) {
+          let relSeconds: number | undefined;
+          let relTimeStr: string | undefined;
+
+          if (currentTimestamp) {
+            const capSec = parseTimestampToSeconds(currentTimestamp);
+            const isShortRelFormat = /^(\d{1,2}:\d{2})$/.test(currentTimestamp.trim());
+
+            if (isShortRelFormat || (capSec < 14400 && (!baseStartTimeStr || parseTimestampToSeconds(baseStartTimeStr) > 28800))) {
+              relSeconds = capSec;
+              relTimeStr = formatRelativeTime(capSec);
+            } else if (baseStartTimeStr) {
+              const baseSec = parseTimestampToSeconds(baseStartTimeStr);
+              let diff = capSec - baseSec;
+              if (diff < 0 && diff > -180) {
+                diff = 0;
+              } else if (diff < 0) {
+                diff += 86400; // Midnight rollover
+              }
+              relSeconds = diff;
+              relTimeStr = formatRelativeTime(diff);
+            }
+          }
+
           parsedBlocks.push({
             id: `block-${blockCount++}`,
             speaker: currentSpeaker,
             timestamp: currentTimestamp,
+            relativeSeconds: relSeconds,
+            relativeTimeStr: relTimeStr,
             text,
             raw: text,
           });
@@ -118,13 +199,15 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
         continue;
       }
 
-      // Pattern 1: [14:15:02] Josué Ortiz: Hola a todos
-      const match1 = line.match(/^\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s*(.*?):\s*(.*)$/);
+      // Pattern 1: [14:15:02] Josué Ortiz: Hola a todos OR [54:17] (12:02:04) Josué Ortiz: Hola
+      const match1 = line.match(/^\[(\d{1,2}:\d{2}(?::\d{2})?)\](?:\s*\((.*?)\))?\s*(.*?):\s*(.*)$/);
       if (match1) {
         commitBlock();
-        currentTimestamp = match1[1];
-        currentSpeaker = match1[2].trim() || 'Participante';
-        currentTextLines.push(match1[3]);
+        const timeA = match1[1];
+        const timeB = match1[2];
+        currentTimestamp = timeB || timeA;
+        currentSpeaker = match1[3].trim() || 'Participante';
+        currentTextLines.push(match1[4]);
         continue;
       }
 
@@ -166,7 +249,7 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
       speakers: Array.from(speakerSet),
       totalWords: words,
     };
-  }, [transcript]);
+  }, [transcript, baseStartTimeStr, durationSeconds]);
 
   // Assign speaker palette map
   const speakerColorMap = useMemo(() => {
@@ -350,13 +433,26 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
             <p className="text-xs font-medium">No se encontraron frases que coincidan con la búsqueda.</p>
           </div>
         ) : (
-          filteredBlocks.map((block) => {
+          filteredBlocks.map((block, idx) => {
             const pal = speakerColorMap.get(block.speaker) || SPEAKER_PALETTES[0];
+            const nextBlock = filteredBlocks[idx + 1];
+            const isActive =
+              typeof currentTime === 'number' &&
+              typeof block.relativeSeconds === 'number' &&
+              currentTime >= block.relativeSeconds &&
+              (nextBlock && typeof nextBlock.relativeSeconds === 'number'
+                ? currentTime < nextBlock.relativeSeconds
+                : currentTime < block.relativeSeconds + 45);
 
             return (
               <div
                 key={block.id}
-                className={`p-3.5 sm:p-4 rounded-2xl bg-slate-50/60 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-800/80 transition-all ${pal.bubble}`}
+                id={block.id}
+                className={`p-3.5 sm:p-4 rounded-2xl border transition-all ${pal.bubble} ${
+                  isActive
+                    ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700/80 shadow-xs ring-1 ring-indigo-500/20'
+                    : 'bg-slate-50/60 dark:bg-slate-800/40 border-slate-200/60 dark:border-slate-800/80'
+                }`}
               >
                 {/* Speaker Header */}
                 <div className="flex items-center justify-between gap-2 mb-2">
@@ -370,13 +466,37 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                     <span className="font-bold text-xs text-slate-900 dark:text-slate-100">
                       {block.speaker}
                     </span>
+                    {isActive && (
+                      <span className="flex h-2 w-2 relative" title="Reproduciendo este momento">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                      </span>
+                    )}
                   </div>
 
-                  {block.timestamp && (
-                    <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-md bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700/60">
-                      {block.timestamp}
-                    </span>
-                  )}
+                  {/* Timestamps & Quick Seek Chip */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {block.relativeTimeStr ? (
+                      <button
+                        type="button"
+                        onClick={() => onSeek && typeof block.relativeSeconds === 'number' && onSeek(block.relativeSeconds)}
+                        className="inline-flex items-center gap-1 text-[11px] font-mono font-bold px-2 py-0.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/70 dark:hover:bg-indigo-900/90 text-indigo-600 dark:text-indigo-400 border border-indigo-200/80 dark:border-indigo-800 transition-all cursor-pointer group shadow-2xs active:scale-95"
+                        title={`Saltar al minuto ${block.relativeTimeStr} en el audio/video (${block.timestamp || ''})`}
+                      >
+                        <Play className="w-2.5 h-2.5 fill-current text-indigo-500 group-hover:scale-110 transition-transform" />
+                        <span>{block.relativeTimeStr}</span>
+                      </button>
+                    ) : null}
+
+                    {block.timestamp && (
+                      <span
+                        className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-md bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700/60"
+                        title="Hora registrada"
+                      >
+                        {block.timestamp}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Speaker Message Text */}

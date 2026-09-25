@@ -19,6 +19,7 @@ router.get('/:token', async (req: Request, res: Response) => {
       `SELECT r.id, r.meeting_title, r.meeting_url, r.drive_file_id, r.drive_url,
               r.duration_seconds, r.recording_mode, r.status, r.transcript_text, r.ai_minutes_text,
               r.share_access, r.share_token, r.created_at, r.started_at, r.completed_at,
+              TO_CHAR(COALESCE(r.started_at, r.created_at) AT TIME ZONE 'America/Mexico_City', 'HH24:MI:SS') as started_at_local,
               u.name as owner_name
        FROM recordings r
        LEFT JOIN users u ON COALESCE(r.owner_user_id, r.user_id) = u.id
@@ -91,6 +92,7 @@ router.get('/:token', async (req: Request, res: Response) => {
         share_access: recording.share_access,
         created_at: recording.created_at,
         started_at: recording.started_at,
+        started_at_local: recording.started_at_local,
         completed_at: recording.completed_at,
         owner_name: recording.owner_name || 'Organizador',
       },

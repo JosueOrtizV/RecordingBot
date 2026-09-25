@@ -873,6 +873,21 @@ export class GoogleMeetBot extends MeetBotBase {
       }
     });
 
+    await this.page.exposeFunction('screenAppMeetStarted', (slightlySecretId: string, timestampMs: number) => {
+      if (slightlySecretId !== this.slightlySecretId) return;
+      try {
+        if (typeof timestampMs === 'number' && timestampMs > 0) {
+          const startedAt = new Date(timestampMs);
+          if (uploader.setRecordingStartedAt) {
+            uploader.setRecordingStartedAt(startedAt);
+          }
+          this._logger.info(`[GoogleMeetBot]: Media recording officially started at ${startedAt.toISOString()}`);
+        }
+      } catch (error) {
+        console.error('Could not process meeting start event', error);
+      }
+    });
+
     const { mimeTypes } = getRecordingMimeTypesForExtension(config.uploaderFileExtension, isAudioOnly);
 
     // Inject the MediaRecorder code into the browser context using page.evaluate
@@ -982,6 +997,9 @@ export class GoogleMeetBot extends MeetBotBase {
           }
 
           const recordingStartedAt = Date.now();
+          try {
+            (window as any).screenAppMeetStarted(slightlySecretId, recordingStartedAt);
+          } catch (e) {}
           const initialAloneGraceMs = activateInactivityDetectionAfterMinutes * 60 * 1000;
 
           let dismissModalsInterval: NodeJS.Timeout;

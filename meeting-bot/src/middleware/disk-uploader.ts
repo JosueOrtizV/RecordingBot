@@ -51,6 +51,7 @@ export interface IUploader {
   saveDataToTempFile(data: Buffer): Promise<boolean>;
   saveTranscript(content: string): Promise<void>;
   setRecordingDuration(durationSeconds: number): void;
+  setRecordingStartedAt?(startedAt: Date): void;
   discard(): Promise<void>;
   readonly dedupGroupId?: string;
 }
@@ -369,6 +370,17 @@ class DiskUploader implements IUploader {
     this.recordingDuration = roundedDuration;
     this._logger.info('Recording duration captured from recorder', {
       duration: roundedDuration,
+      userId: this._userId,
+      teamId: this._teamId,
+    });
+  }
+
+  private _recordingStartedAt?: Date;
+
+  public setRecordingStartedAt(startedAt: Date): void {
+    this._recordingStartedAt = startedAt;
+    this._logger.info('Recording startedAt timestamp captured', {
+      startedAt: startedAt.toISOString(),
       userId: this._userId,
       teamId: this._teamId,
     });
@@ -915,6 +927,7 @@ class DiskUploader implements IUploader {
                 driveFolderName: this.driveFolderName,
                 dedupGroupId: this.dedupGroupId,
                 recordingMode: this._recordingMode,
+                recordingStartedAt: this._recordingStartedAt ? this._recordingStartedAt.toISOString() : undefined,
               }
             };
             await notifyRecordingCompleted(payload, this._logger);
@@ -971,6 +984,7 @@ class DiskUploader implements IUploader {
               namePrefix: this._namePrefix,
               transcriptText: this.lastTranscriptContent,
               dedupGroupId: this.dedupGroupId,
+              recordingStartedAt: this._recordingStartedAt ? this._recordingStartedAt.toISOString() : undefined,
             },
           };
           await notifyRecordingCompleted(payload, this._logger);

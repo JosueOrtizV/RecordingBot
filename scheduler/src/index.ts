@@ -101,6 +101,8 @@ async function startNotificationListener() {
           hasTranscript: Boolean(transcriptText),
         });
 
+        const recordingStartedAt = data.metadata?.recordingStartedAt || null;
+
         // Update DB
         try {
           if (recordingId || botId || eventId) {
@@ -111,9 +113,10 @@ async function startNotificationListener() {
                    drive_file_id = COALESCE(NULLIF($2, ''), drive_file_id),
                    duration_seconds = COALESCE($3, duration_seconds),
                    transcript_text = COALESCE($4, transcript_text),
+                   started_at = COALESCE($5::timestamptz, started_at),
                    completed_at = NOW()
-               WHERE id::text = $5 OR calendar_event_id = $5 OR id::text = $6 OR calendar_event_id = $6`,
-              [driveUrl, fileId, durationSecs, transcriptText, recordingId, botId || eventId]
+               WHERE id::text = $6 OR calendar_event_id = $6 OR id::text = $7 OR calendar_event_id = $7`,
+              [driveUrl, fileId, durationSecs, transcriptText, recordingStartedAt, recordingId, botId || eventId]
             );
           }
 
@@ -139,9 +142,10 @@ async function startNotificationListener() {
                    drive_file_id = COALESCE(NULLIF($2, ''), drive_file_id),
                    duration_seconds = COALESCE($3, duration_seconds),
                    transcript_text = COALESCE($4, transcript_text),
+                   started_at = COALESCE($5::timestamptz, started_at),
                    completed_at = NOW()
-               WHERE dedup_group_id::text = $5`,
-              [driveUrl, fileId, durationSecs, transcriptText, activeDedupGroupId]
+               WHERE dedup_group_id::text = $6`,
+              [driveUrl, fileId, durationSecs, transcriptText, recordingStartedAt, activeDedupGroupId]
             );
           }
         } catch (dbErr) {

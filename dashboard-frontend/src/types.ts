@@ -87,6 +87,7 @@ export interface Recording {
     is_drive_owner: boolean;
   }>;
   started_at: string;
+  started_at_local?: string;
   completed_at?: string;
   created_at: string;
 }
