@@ -20,6 +20,9 @@ wait_for_pulseaudio() {
     return 1
 }
 
+# Clean up any stale Xvfb lock files
+rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 2>/dev/null || true
+
 # Start Xvfb (800px height to accommodate 80px offset for address bar)
 Xvfb :99 -screen 0 1280x800x24 &
 xvfb_pid=$!
