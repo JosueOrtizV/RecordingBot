@@ -39,12 +39,19 @@ export interface GenerateMinutesOptions {
 }
 
 const CANDIDATE_MODELS = [
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
   'gemini-3.5-flash',
-  'gemini-3.6-flash',
-  'gemini-3.7-flash',
-  'gemini-flash-latest',
-  'gemini-2.5-flash',
+  'gemini-3.8-flash',
 ];
+
+const DEPRECATED_MODELS = new Set([
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+  'gemini-flash-latest',
+]);
 
 /**
  * Call the Google Gemini API to generate structured meeting minutes from a transcript.
@@ -74,7 +81,11 @@ TRANSCRIPCIÓN DE LA REUNIÓN: ${meetingTitle}
 ${transcript}
 `;
 
-  const preferredModel = options.model || process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+  const requestedModel = options.model || process.env.GEMINI_MODEL;
+  const preferredModel = (requestedModel && !DEPRECATED_MODELS.has(requestedModel))
+    ? requestedModel
+    : 'gemini-3.5-flash-lite';
+
   const modelsToTry = [
     preferredModel,
     ...CANDIDATE_MODELS.filter((m) => m !== preferredModel),
@@ -122,6 +133,12 @@ ${transcript}
         
         console.warn(`[Gemini] Model ${model} returned HTTP ${response.status}: ${parsedMessage}. Trying next candidate model...`);
         lastError = new Error(`Error en modelo ${model} (${response.status}): ${parsedMessage}`);
+
+        // If rate limited (429) or temporary server overload (503), add a brief backoff
+        // before switching to the next candidate model to avoid tripping burst limits.
+        if (response.status === 429 || response.status === 503) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
         continue;
       }
 
@@ -136,6 +153,12 @@ ${transcript}
       console.warn(`[Gemini] Exception calling model ${model}:`, err.message);
       lastError = err;
     }
+  }
+
+  if (lastError && (lastError.message.includes('429') || lastError.message.includes('503'))) {
+    throw new Error(
+      'Los servidores de Gemini están experimentando alta demanda momentánea o alcanzaron el límite de solicitudes por minuto de la capa gratuita. Por favor, espera unos segundos e inténtalo de nuevo.'
+    );
   }
 
   throw lastError || new Error('No se pudo generar la minuta con ninguno de los modelos de Gemini disponibles.');
