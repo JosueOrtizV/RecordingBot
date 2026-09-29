@@ -20,6 +20,7 @@ export const config = {
   redisRecordingList: process.env.NOTIFY_REDIS_LIST || 'jobs:meetbot:recordings',
   redisFailureList: process.env.NOTIFY_REDIS_FAILURE_LIST || 'jobs:meetbot:failures',
   redisStartedList: process.env.NOTIFY_REDIS_STARTED_LIST || 'jobs:meetbot:started',
+  redisStatusList: process.env.NOTIFY_REDIS_STATUS_LIST || 'jobs:meetbot:status',
 
   // Polling settings
   pollIntervalMinutes: parseInt(process.env.CALENDAR_POLL_INTERVAL_MINUTES || '2', 10),

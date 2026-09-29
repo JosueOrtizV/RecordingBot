@@ -10,16 +10,52 @@ import { query } from './db';
 async function startNotificationListener() {
   const redis = getRedisClient().duplicate();
 
-  logger.info(`Listening for Redis notifications on "${config.redisRecordingList}", "${config.redisFailureList}" and "${config.redisStartedList}"...`);
+  logger.info(`Listening for Redis notifications on "${config.redisRecordingList}", "${config.redisFailureList}", "${config.redisStartedList}" and "${config.redisStatusList}"...`);
 
   while (true) {
     try {
       // Blocking pop from all notification lists
-      const result = await redis.brpop(config.redisRecordingList, config.redisFailureList, config.redisStartedList, 0);
+      const result = await redis.brpop(config.redisRecordingList, config.redisFailureList, config.redisStartedList, config.redisStatusList, 0);
       if (!result) continue;
 
       const [listName, payloadStr] = result;
       const data = JSON.parse(payloadStr);
+
+      if (listName === config.redisStatusList) {
+        const { recordingId, botId, status } = data;
+        const targetId = recordingId || botId;
+        logger.info(`Received recording status change notification to '${status}':`, { recordingId, botId });
+
+        try {
+          if (targetId) {
+            await query(
+              `UPDATE recordings
+               SET status = $1
+               WHERE (id::text = $2 OR calendar_event_id = $2)
+                 AND status IN ('pending', 'recording', 'paused')`,
+              [status, targetId]
+            );
+
+            // Also check for deduplicated records
+            const rowRes = await query(
+              `SELECT dedup_group_id FROM recordings WHERE (id::text = $1 OR calendar_event_id = $1) AND dedup_group_id IS NOT NULL LIMIT 1`,
+              [targetId]
+            );
+            if (rowRes.rows.length > 0 && rowRes.rows[0].dedup_group_id) {
+              await query(
+                `UPDATE recordings
+                 SET status = $1
+                 WHERE dedup_group_id::text = $2
+                   AND status IN ('pending', 'recording', 'paused')`,
+                [status, rowRes.rows[0].dedup_group_id]
+              );
+            }
+          }
+        } catch (dbErr) {
+          logger.warn('Failed to update status change in DB:', dbErr);
+        }
+        continue;
+      }
 
       if (listName === config.redisStartedList) {
         const botId = data.botId || '';

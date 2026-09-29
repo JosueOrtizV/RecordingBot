@@ -195,6 +195,10 @@ export class CaptionTask {
       }
 
       function scanForCaptions() {
+        if (typeof (window as any).__isRecordingPaused === 'function' && (window as any).__isRecordingPaused()) {
+          return; // Skip captions while recording is paused
+        }
+
         // Target new Meet CC interface regions
         const captionRegions = document.querySelectorAll('div[aria-label*="ubt"], div[aria-label*="aption"]');
 

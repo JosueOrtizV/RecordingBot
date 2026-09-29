@@ -17,12 +17,15 @@ import { getRecordingMimeTypesForExtension } from '../lib/recording';
 import { getGoogleMeetDisplayName } from '../util/googleMeetDisplayName';
 import { CaptionTask } from '../tasks/CaptionTask';
 import { activeBotRegistry } from '../lib/activeBots';
-import { notifyRecordingStarted } from '../services/notificationService';
+import { notifyRecordingStarted, notifyRecordingStatusChange } from '../services/notificationService';
 
 export class GoogleMeetBot extends MeetBotBase {
   private _logger: Logger;
   private _correlationId: string;
   private isCancelledWithoutSave: boolean = false;
+  private isPaused: boolean = false;
+  private currentBotId?: string;
+  private currentEventId?: string;
   private waitingPromise: WaitPromise | null = null;
 
   constructor(logger: Logger, correlationId: string) {
@@ -70,8 +73,52 @@ export class GoogleMeetBot extends MeetBotBase {
     };
   }
 
+  async pause(): Promise<{ success: boolean; message: string; isPaused: boolean }> {
+    this._logger.info(`Pause requested for GoogleMeetBot.`);
+    try {
+      if (this.page && !this.page.isClosed()) {
+        await this.page.evaluate(() => {
+          if (typeof (window as any).__pauseRecording === 'function') {
+            (window as any).__pauseRecording();
+          }
+        }).catch(() => {});
+      }
+    } catch (err) {
+      this._logger.warn('Could not trigger in-page __pauseRecording', err);
+    }
+    this.isPaused = true;
+    return {
+      success: true,
+      message: 'Grabación pausada.',
+      isPaused: true,
+    };
+  }
+
+  async resume(): Promise<{ success: boolean; message: string; isPaused: boolean }> {
+    this._logger.info(`Resume requested for GoogleMeetBot.`);
+    try {
+      if (this.page && !this.page.isClosed()) {
+        await this.page.evaluate(() => {
+          if (typeof (window as any).__resumeRecording === 'function') {
+            (window as any).__resumeRecording();
+          }
+        }).catch(() => {});
+      }
+    } catch (err) {
+      this._logger.warn('Could not trigger in-page __resumeRecording', err);
+    }
+    this.isPaused = false;
+    return {
+      success: true,
+      message: 'Grabación reanudada.',
+      isPaused: false,
+    };
+  }
+
   async join({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, uploader, recordingMode, meetingTitle }: JoinParams): Promise<void> {
     const _state: BotStatus[] = ['processing'];
+    this.currentBotId = botId;
+    this.currentEventId = eventId;
 
     const handleUpload = async () => {
       this._logger.info('Begin recording upload to server', { userId, teamId });
@@ -86,6 +133,9 @@ export class GoogleMeetBot extends MeetBotBase {
         meetingTitle,
         url,
         userId,
+        isPaused: () => this.isPaused,
+        pause: () => this.pause(),
+        resume: () => this.resume(),
         stop: (save) => this.stop(save),
       });
     }
@@ -740,36 +790,41 @@ export class GoogleMeetBot extends MeetBotBase {
     pushState('finished');
   }
 
-  private async sendMeetingChatMessage(botName?: string): Promise<void> {
+  private async sendMeetingChatMessage(customMessage?: string, botName?: string): Promise<void> {
     try {
-      this._logger.info('[ChatNotification]: Attempting to send recording disclaimer message to chat...');
-      await this.page.waitForTimeout(1500);
+      this._logger.info('[ChatNotification]: Attempting to send message to Google Meet chat...', { customMessage: !!customMessage });
+      await this.page.waitForTimeout(1000);
 
       // 1. Dismiss any blocking notifications (like "No se encontró una cámara")
       await this.page.evaluate(() => {
         const dismissButtons = document.querySelectorAll('button[aria-label="Cerrar"], button[aria-label="Close"], button[aria-label="Cerrar notificación"]');
         dismissButtons.forEach(btn => (btn as HTMLElement).click());
       });
-      await this.page.waitForTimeout(500);
+      await this.page.waitForTimeout(300);
 
-      // 2. Find the chat button on the bottom control bar using evaluate
-      const chatOpened = await this.page.evaluate(() => {
+      // 2. Check if chat is already open or click to open it
+      const chatState = await this.page.evaluate(() => {
+        const existingTextarea = Array.from(document.querySelectorAll('textarea')).find(ta => (ta as HTMLElement).offsetParent !== null);
+        if (existingTextarea) {
+          return { ready: true, wasAlreadyOpen: true };
+        }
         const btns = Array.from(document.querySelectorAll('button'));
         for (const btn of btns) {
           const label = btn.getAttribute('aria-label')?.toLowerCase() || '';
-          // Avoid matching the "Close chat" button which might also contain "chat" if it's already open
           if (btn.getBoundingClientRect().width > 0 && 
              (label.includes('chatear') || label.includes('chat con') || label === 'chat' || btn.dataset.panelId === '2')) {
             btn.click();
-            return true;
+            return { ready: true, wasAlreadyOpen: false };
           }
         }
-        return false;
+        return { ready: false, wasAlreadyOpen: false };
       });
 
-      if (chatOpened) {
-        // Wait for the panel animation to finish
-        await this.page.waitForTimeout(2000);
+      if (chatState.ready) {
+        // Wait for the panel animation to finish if it was newly opened
+        if (!chatState.wasAlreadyOpen) {
+          await this.page.waitForTimeout(1500);
+        }
         
         // Find ALL textareas and look for the one that is actually visible on screen
         const textareas = this.page.locator('textarea');
@@ -786,9 +841,17 @@ export class GoogleMeetBot extends MeetBotBase {
         }
 
         if (targetTextarea) {
-          const messageText = `Hola, soy ${botName || 'el asistente'}. Estoy grabando y transcribiendo esta llamada para generar una minuta automática.`;
+          const defaultWelcome = `🤖 RecordingBot está grabando y generando la minuta de esta reunión.
+Al continuar, aceptas la política de privacidad: https://recordingbot.josueortiz.dev/privacy
+
+Comandos de chat disponibles:
+• /bot pause  — Pausar grabación
+• /bot resume — Reanudar grabación
+• /bot leave  — Detener grabación y salir`;
+
+          const messageText = customMessage || defaultWelcome;
           await targetTextarea.fill(messageText);
-          await this.page.waitForTimeout(500);
+          await this.page.waitForTimeout(400);
           
           // Press Enter to send
           await this.page.keyboard.press('Enter');
@@ -799,19 +862,21 @@ export class GoogleMeetBot extends MeetBotBase {
             await sendButton.click({ timeout: 2000, force: true }).catch(() => null);
           }
 
-          this._logger.info('[ChatNotification]: Successfully sent recording disclaimer to chat');
-          await this.page.waitForTimeout(1000);
+          this._logger.info('[ChatNotification]: Successfully sent message to chat');
+          await this.page.waitForTimeout(800);
 
-          // Close the chat panel to restore clean UI view
-          await this.page.evaluate(() => {
-            const closeBtns = Array.from(document.querySelectorAll('button'));
-            for (const btn of closeBtns) {
-              const label = btn.getAttribute('aria-label')?.toLowerCase() || '';
-              if (btn.getBoundingClientRect().width > 0 && (label === 'cerrar' || label === 'close' || label.includes('cerrar chat'))) {
-                btn.click();
+          // Close the chat panel to restore clean UI view if it wasn't open before
+          if (!chatState.wasAlreadyOpen) {
+            await this.page.evaluate(() => {
+              const closeBtns = Array.from(document.querySelectorAll('button'));
+              for (const btn of closeBtns) {
+                const label = btn.getAttribute('aria-label')?.toLowerCase() || '';
+                if (btn.getBoundingClientRect().width > 0 && (label === 'cerrar' || label === 'close' || label.includes('cerrar chat'))) {
+                  btn.click();
+                }
               }
-            }
-          });
+            });
+          }
         } else {
           this._logger.warn('[ChatNotification]: Chat textarea not found or not visible');
         }
@@ -885,6 +950,42 @@ export class GoogleMeetBot extends MeetBotBase {
         }
       } catch (error) {
         console.error('Could not process meeting start event', error);
+      }
+    });
+
+    await this.page.exposeFunction('screenAppMeetPaused', (slightlySecretId: string) => {
+      if (slightlySecretId !== this.slightlySecretId) return;
+      this.isPaused = true;
+      this._logger.info('[GoogleMeetBot]: In-page recording paused event received.');
+    });
+
+    await this.page.exposeFunction('screenAppMeetResumed', (slightlySecretId: string) => {
+      if (slightlySecretId !== this.slightlySecretId) return;
+      this.isPaused = false;
+      this._logger.info('[GoogleMeetBot]: In-page recording resumed event received.');
+    });
+
+    await this.page.exposeFunction('screenAppOnChatCommand', async (slightlySecretId: string, cmd: string) => {
+      if (slightlySecretId !== this.slightlySecretId) return;
+      this._logger.info(`[GoogleMeetBot]: Chat command received: "${cmd}"`);
+
+      const targetId = botId || eventId;
+      if (cmd === 'pause') {
+        await this.pause();
+        if (targetId) {
+          await notifyRecordingStatusChange({ recordingId: targetId, botId: targetId, status: 'paused', timestamp: new Date().toISOString() }, this._logger).catch(() => {});
+        }
+        this.sendMeetingChatMessage("⏸️ Grabación pausada por solicitud en el chat. Escribe '/bot resume' para reanudar.").catch(() => {});
+      } else if (cmd === 'resume') {
+        await this.resume();
+        if (targetId) {
+          await notifyRecordingStatusChange({ recordingId: targetId, botId: targetId, status: 'recording', timestamp: new Date().toISOString() }, this._logger).catch(() => {});
+        }
+        this.sendMeetingChatMessage("▶️ Grabación reanudada.").catch(() => {});
+      } else if (cmd === 'stop') {
+        this.sendMeetingChatMessage("👋 Guardando grabación y saliendo de la llamada...").catch(() => {});
+        await new Promise(r => setTimeout(r, 1500));
+        await this.stop(true);
       }
     });
 
@@ -1057,7 +1158,46 @@ export class GoogleMeetBot extends MeetBotBase {
             }
           };
 
+          let isRecordingPaused = false;
+
+          const pauseTheRecording = () => {
+            if (isRecordingPaused) return;
+            isRecordingPaused = true;
+            console.log('[MeetBot]: In-page pauseTheRecording triggered.');
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+              try {
+                mediaRecorder.pause();
+                console.log('[MeetBot]: mediaRecorder.pause() succeeded.');
+              } catch (e) {
+                console.warn('[MeetBot]: mediaRecorder.pause() error:', e);
+              }
+            }
+            try {
+              (window as any).screenAppMeetPaused?.(slightlySecretId);
+            } catch (e) {}
+          };
+
+          const resumeTheRecording = () => {
+            if (!isRecordingPaused) return;
+            isRecordingPaused = false;
+            console.log('[MeetBot]: In-page resumeTheRecording triggered.');
+            if (mediaRecorder && mediaRecorder.state === 'paused') {
+              try {
+                mediaRecorder.resume();
+                console.log('[MeetBot]: mediaRecorder.resume() succeeded.');
+              } catch (e) {
+                console.warn('[MeetBot]: mediaRecorder.resume() error:', e);
+              }
+            }
+            try {
+              (window as any).screenAppMeetResumed?.(slightlySecretId);
+            } catch (e) {}
+          };
+
           (window as any).__stopRecording = () => stopTheRecording();
+          (window as any).__pauseRecording = () => pauseTheRecording();
+          (window as any).__resumeRecording = () => resumeTheRecording();
+          (window as any).__isRecordingPaused = () => isRecordingPaused;
 
           let loneTest: NodeJS.Timeout;
           let detectionFailures = 0;
@@ -1335,12 +1475,19 @@ export class GoogleMeetBot extends MeetBotBase {
                   }
 
                   if (audioActivity < silenceThreshold) {
-                    silenceDuration += 100; // Check every 100ms
-                    if (silenceDuration >= inactivityLimit) {
-                        console.warn('Detected silence in Google Meet and ending the recording on team:', userId, teamId);
-                        console.log('Silence detection stats - Avg audio activity:', (audioActivitySum / totalChecks).toFixed(2), 'Checks performed:', totalChecks);
-                        monitor = false;
-                        stopTheRecording();
+                    if (isRecordingPaused) {
+                      silenceDuration = 0;
+                    } else if (hasSeenOtherParticipant && aloneSince === null) {
+                      // Other participants are in the call! Do not exit due to silence while people are in the room.
+                      silenceDuration = 0;
+                    } else {
+                      silenceDuration += 100; // Check every 100ms
+                      if (silenceDuration >= inactivityLimit) {
+                          console.warn('Detected silence in Google Meet and ending the recording on team:', userId, teamId);
+                          console.log('Silence detection stats - Avg audio activity:', (audioActivitySum / totalChecks).toFixed(2), 'Checks performed:', totalChecks);
+                          monitor = false;
+                          stopTheRecording();
+                      }
                     }
                   } else {
                     silenceDuration = 0;
@@ -1370,6 +1517,69 @@ export class GoogleMeetBot extends MeetBotBase {
            * Perpetual checks for inactivity detection
            */
           detectLoneParticipantResilient();
+
+          /**
+           * Chat command listener for in-meeting commands (/bot pause, /bot resume, /bot leave)
+           */
+          const initChatCommandListener = () => {
+            console.log('[MeetBotChat]: Starting chat command listener on Google Meet DOM...');
+            let lastCommand = '';
+            let lastCommandTime = 0;
+
+            const parseBotCommand = (text: string): string | null => {
+              if (!text || typeof text !== 'string') return null;
+              if (text.includes('RecordingBot está grabando') ||
+                  text.includes('Comandos de chat') ||
+                  text.includes('política de privacidad') ||
+                  text.includes('Grabación pausada') ||
+                  text.includes('Grabación reanudada') ||
+                  text.includes('saliendo de la llamada')) {
+                return null;
+              }
+
+              const match = text.match(/(?:^|:\s*|\n|\s)\s*(?:\/bot|\/ff|!bot)\s+(pause|resume|pausar|reanudar|leave|stop|detener|salir)\b/i);
+              if (!match) return null;
+              const cmd = match[1].toLowerCase();
+              if (['pause', 'pausar'].includes(cmd)) return 'pause';
+              if (['resume', 'reanudar'].includes(cmd)) return 'resume';
+              if (['leave', 'stop', 'detener', 'salir'].includes(cmd)) return 'stop';
+              return null;
+            };
+
+            const handleDetectedCommand = (cmd: string) => {
+              const now = Date.now();
+              if (lastCommand === cmd && (now - lastCommandTime) < 5000) {
+                return;
+              }
+              lastCommand = cmd;
+              lastCommandTime = now;
+              console.log('[MeetBotChat]: Command detected in Meet UI:', cmd);
+
+              try {
+                (window as any).screenAppOnChatCommand?.(slightlySecretId, cmd);
+              } catch (e) {
+                console.error('[MeetBotChat]: Error calling screenAppOnChatCommand:', e);
+              }
+            };
+
+            const chatObserver = new MutationObserver((mutations) => {
+              for (const mutation of mutations) {
+                for (const node of Array.from(mutation.addedNodes)) {
+                  if (node.nodeType === 1 || node.nodeType === 3) {
+                    const content = node.textContent || '';
+                    const cmd = parseBotCommand(content);
+                    if (cmd) {
+                      handleDetectedCommand(cmd);
+                    }
+                  }
+                }
+              }
+            });
+
+            chatObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+          };
+
+          initChatCommandListener();
 
           inactivitySilenceDetectionTimeout = setTimeout(() => {
             detectIncrediblySilentMeeting();
@@ -1510,7 +1720,7 @@ export class GoogleMeetBot extends MeetBotBase {
     this._logger.info('Recording started successfully! Audio/video capture is active.');
 
     // Send automated chat notification asynchronously (now that recording is already rolling!)
-    this.sendMeetingChatMessage(botName).catch(chatErr => {
+    this.sendMeetingChatMessage(undefined, botName).catch(chatErr => {
       this._logger.warn('[ChatNotification]: Background chat message failed:', chatErr);
     });
 

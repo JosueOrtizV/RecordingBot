@@ -148,6 +148,17 @@ export interface RecordingStartedPayload {
   timestamp: string;
 }
 
+export interface RecordingStatusChangedPayload {
+  recordingId: string;
+  botId?: string;
+  status: 'recording' | 'paused';
+  timestamp: string;
+}
+
+export async function notifyRecordingStatusChange(payload: RecordingStatusChangedPayload, logger: Logger) {
+  await rpushToRedisList(payload, logger, config.notifyRedisStatusList, 'Recording status change');
+}
+
 export async function notifyRecordingStarted(payload: RecordingStartedPayload, logger: Logger) {
   await rpushToRedisList(payload, logger, config.notifyRedisStartedList, 'Recording started');
 }

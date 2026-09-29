@@ -69,7 +69,7 @@ export interface Recording {
   drive_url?: string;
   duration_seconds?: number;
   recording_mode: 'video' | 'audio' | 'transcript_only';
-  status: 'pending' | 'recording' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'recording' | 'paused' | 'completed' | 'failed' | 'cancelled';
   error_message?: string;
   has_transcript: boolean;
   transcript_text?: string;
@@ -127,6 +127,7 @@ export interface WorkerStatus {
     meeting_title: string;
     meeting_url: string;
     recording_mode: string;
+    status?: string;
     started_at: string;
     user_name: string;
   }>;

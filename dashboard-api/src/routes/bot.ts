@@ -252,10 +252,10 @@ router.get('/status', requireAuth, async (req: Request, res: Response) => {
 
     // Check all active recordings from DB for global capacity calculation
     const allActiveRes = await query(
-      `SELECT r.id, r.meeting_title, r.meeting_url, r.recording_mode, r.started_at, r.user_id, u.name as user_name
+      `SELECT r.id, r.meeting_title, r.meeting_url, r.recording_mode, r.status, r.started_at, r.user_id, u.name as user_name
        FROM recordings r
        JOIN users u ON u.id = r.user_id
-       WHERE r.status IN ('pending', 'recording')
+       WHERE r.status IN ('pending', 'recording', 'paused')
        ORDER BY r.started_at DESC`
     );
 
@@ -310,7 +310,7 @@ router.get('/active', requireAuth, async (req: Request, res: Response) => {
     const activeRes = await query(
       `SELECT id, meeting_title, meeting_url, recording_mode, status, started_at
        FROM recordings
-       WHERE user_id = $1 AND status IN ('pending', 'recording')
+       WHERE user_id = $1 AND status IN ('pending', 'recording', 'paused')
        ORDER BY started_at DESC`,
       [userId]
     );
@@ -465,6 +465,146 @@ router.post('/recordings/:id/stop', requireAuth, async (req: Request, res: Respo
   } catch (err: any) {
     console.error('Error stopping recording:', err);
     res.status(500).json({ error: err?.message || 'Error al detener grabación.' });
+  }
+});
+
+// POST /api/bot/recordings/:id/pause
+router.post('/recordings/:id/pause', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const recordingId = req.params.id;
+
+    const recRes = await query(
+      `SELECT id, user_id, owner_user_id, status, dedup_group_id FROM recordings WHERE id = $1`,
+      [recordingId]
+    );
+
+    if (recRes.rows.length === 0) {
+      res.status(404).json({ error: 'Grabación no encontrada.' });
+      return;
+    }
+
+    const rec = recRes.rows[0];
+    if (rec.user_id !== userId) {
+      res.status(403).json({ error: 'No tienes permiso para pausar esta grabación.' });
+      return;
+    }
+
+    if (rec.status !== 'recording') {
+      res.status(400).json({ error: `No se puede pausar una grabación en estado '${rec.status}'.` });
+      return;
+    }
+
+    const meetingBotUrl = process.env.MEETING_BOT_URL || 'http://meeting-bot:3000';
+    let targetBotId = rec.id;
+    if (rec.dedup_group_id && rec.owner_user_id && rec.owner_user_id !== rec.user_id) {
+      const primaryRes = await query(
+        `SELECT id FROM recordings WHERE user_id = $1 AND dedup_group_id = $2 LIMIT 1`,
+        [rec.owner_user_id, rec.dedup_group_id]
+      );
+      if (primaryRes.rows.length > 0) targetBotId = primaryRes.rows[0].id;
+    }
+
+    try {
+      const resp = await fetch(`${meetingBotUrl}/bot/${targetBotId}/pause`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!resp.ok) {
+        const errorData = (await resp.json().catch(() => ({}))) as any;
+        res.status(resp.status).json({ error: errorData.error || 'No se pudo pausar el bot' });
+        return;
+      }
+    } catch (botErr: any) {
+      console.error('[Bot Pause] Could not reach meeting-bot HTTP server:', botErr);
+      res.status(502).json({ error: 'No se pudo comunicar con el bot activo.' });
+      return;
+    }
+
+    // Update status in DB
+    if (rec.dedup_group_id) {
+      await query(
+        `UPDATE recordings SET status = 'paused' WHERE dedup_group_id = $1 AND status = 'recording'`,
+        [rec.dedup_group_id]
+      );
+    } else {
+      await query(`UPDATE recordings SET status = 'paused' WHERE id = $1`, [rec.id]);
+    }
+
+    res.json({ success: true, message: 'Grabación pausada exitosamente.' });
+  } catch (err: any) {
+    console.error('Error pausing recording:', err);
+    res.status(500).json({ error: err?.message || 'Error al pausar grabación.' });
+  }
+});
+
+// POST /api/bot/recordings/:id/resume
+router.post('/recordings/:id/resume', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const userId = req.user!.id;
+    const recordingId = req.params.id;
+
+    const recRes = await query(
+      `SELECT id, user_id, owner_user_id, status, dedup_group_id FROM recordings WHERE id = $1`,
+      [recordingId]
+    );
+
+    if (recRes.rows.length === 0) {
+      res.status(404).json({ error: 'Grabación no encontrada.' });
+      return;
+    }
+
+    const rec = recRes.rows[0];
+    if (rec.user_id !== userId) {
+      res.status(403).json({ error: 'No tienes permiso para reanudar esta grabación.' });
+      return;
+    }
+
+    if (rec.status !== 'paused') {
+      res.status(400).json({ error: `La grabación no se encuentra pausada (estado: '${rec.status}').` });
+      return;
+    }
+
+    const meetingBotUrl = process.env.MEETING_BOT_URL || 'http://meeting-bot:3000';
+    let targetBotId = rec.id;
+    if (rec.dedup_group_id && rec.owner_user_id && rec.owner_user_id !== rec.user_id) {
+      const primaryRes = await query(
+        `SELECT id FROM recordings WHERE user_id = $1 AND dedup_group_id = $2 LIMIT 1`,
+        [rec.owner_user_id, rec.dedup_group_id]
+      );
+      if (primaryRes.rows.length > 0) targetBotId = primaryRes.rows[0].id;
+    }
+
+    try {
+      const resp = await fetch(`${meetingBotUrl}/bot/${targetBotId}/resume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!resp.ok) {
+        const errorData = (await resp.json().catch(() => ({}))) as any;
+        res.status(resp.status).json({ error: errorData.error || 'No se pudo reanudar el bot' });
+        return;
+      }
+    } catch (botErr: any) {
+      console.error('[Bot Resume] Could not reach meeting-bot HTTP server:', botErr);
+      res.status(502).json({ error: 'No se pudo comunicar con el bot activo.' });
+      return;
+    }
+
+    // Update status in DB
+    if (rec.dedup_group_id) {
+      await query(
+        `UPDATE recordings SET status = 'recording' WHERE dedup_group_id = $1 AND status = 'paused'`,
+        [rec.dedup_group_id]
+      );
+    } else {
+      await query(`UPDATE recordings SET status = 'recording' WHERE id = $1`, [rec.id]);
+    }
+
+    res.json({ success: true, message: 'Grabación reanudada exitosamente.' });
+  } catch (err: any) {
+    console.error('Error resuming recording:', err);
+    res.status(500).json({ error: err?.message || 'Error al reanudar grabación.' });
   }
 });
 

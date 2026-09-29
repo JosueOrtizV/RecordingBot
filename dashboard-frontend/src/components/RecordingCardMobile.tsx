@@ -15,6 +15,8 @@ import {
   XCircle,
   Square,
   Trash2,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -22,6 +24,8 @@ import { es } from 'date-fns/locale';
 interface RecordingCardMobileProps {
   recording: Recording;
   onStop?: (recording: { id: string; title: string }) => void;
+  onPause?: (id: string) => void;
+  onResume?: (id: string) => void;
   onDelete?: (id: string) => void;
   showDelete?: boolean;
 }
@@ -29,6 +33,8 @@ interface RecordingCardMobileProps {
 export const RecordingCardMobile: React.FC<RecordingCardMobileProps> = ({
   recording,
   onStop,
+  onPause,
+  onResume,
   onDelete,
   showDelete = false,
 }) => {
@@ -68,6 +74,11 @@ export const RecordingCardMobile: React.FC<RecordingCardMobileProps> = ({
               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 dark:text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full animate-pulse">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
                 <span>En Curso</span>
+              </span>
+            ) : recording.status === 'paused' ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                <Pause className="w-3 h-3 text-amber-500" />
+                <span>En Pausa</span>
               </span>
             ) : recording.status === 'failed' ? (
               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 dark:text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full">
@@ -236,8 +247,38 @@ export const RecordingCardMobile: React.FC<RecordingCardMobileProps> = ({
 
           {/* Action Buttons Bar */}
           <div className="pt-2 flex items-center justify-end gap-2 flex-wrap">
+            {/* Pause / Resume button if active */}
+            {recording.status === 'paused' && onResume && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onResume(recording.id);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500 text-emerald-600 dark:text-emerald-400 hover:text-white border border-emerald-500/20 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                title="Reanudar grabación"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Reanudar</span>
+              </button>
+            )}
+            {recording.status === 'recording' && onPause && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPause(recording.id);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500 text-amber-600 dark:text-amber-400 hover:text-white border border-amber-500/20 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                title="Pausar grabación"
+              >
+                <Pause className="w-3.5 h-3.5 fill-current" />
+                <span>Pausar</span>
+              </button>
+            )}
+
             {/* Stop recording button if active */}
-            {(recording.status === 'recording' || recording.status === 'pending') && onStop && (
+            {(recording.status === 'recording' || recording.status === 'paused' || recording.status === 'pending') && onStop && (
               <button
                 type="button"
                 onClick={() => onStop({ id: recording.id, title: recording.meeting_title || 'Reunión' })}

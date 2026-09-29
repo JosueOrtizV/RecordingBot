@@ -96,6 +96,54 @@ app.post('/bot/:botId/stop', async (req, res) => {
   }
 });
 
+// Endpoint to pause a live bot
+app.post('/bot/:botId/pause', async (req, res) => {
+  const { botId } = req.params;
+  console.log(`[HTTP /bot/${botId}/pause] Received pause request.`);
+
+  if (!activeBotRegistry.has(botId)) {
+    return res.status(404).json({
+      success: false,
+      error: 'Bot no encontrado o ya concluyó su llamada.',
+    });
+  }
+
+  try {
+    const result = await activeBotRegistry.pauseBot(botId);
+    return res.status(result.success ? 200 : 400).json(result);
+  } catch (err: any) {
+    console.error(`[HTTP /bot/${botId}/pause] Error pausing bot:`, err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'Error al pausar bot',
+    });
+  }
+});
+
+// Endpoint to resume a live bot
+app.post('/bot/:botId/resume', async (req, res) => {
+  const { botId } = req.params;
+  console.log(`[HTTP /bot/${botId}/resume] Received resume request.`);
+
+  if (!activeBotRegistry.has(botId)) {
+    return res.status(404).json({
+      success: false,
+      error: 'Bot no encontrado o ya concluyó su llamada.',
+    });
+  }
+
+  try {
+    const result = await activeBotRegistry.resumeBot(botId);
+    return res.status(result.success ? 200 : 400).json(result);
+  } catch (err: any) {
+    console.error(`[HTTP /bot/${botId}/resume] Error resuming bot:`, err);
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'Error al reanudar bot',
+    });
+  }
+});
+
 export const setGracefulShutdown = (val: number) =>
   gracefulShutdown = val;
 

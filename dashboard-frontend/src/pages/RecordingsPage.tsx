@@ -26,6 +26,8 @@ import {
   Eye,
   Square,
   XCircle,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { format, startOfWeek, endOfWeek } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -34,7 +36,7 @@ import { RecordingCardMobile } from '../components/RecordingCardMobile';
 
 type TimeRangeFilter = 'today' | 'week' | 'month' | 'all';
 type ModeFilter = 'all' | 'video' | 'audio' | 'transcript_only';
-type StatusFilter = 'all' | 'completed' | 'recording' | 'failed' | 'cancelled';
+type StatusFilter = 'all' | 'completed' | 'recording' | 'paused' | 'failed' | 'cancelled';
 
 export const RecordingsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -44,6 +46,7 @@ export const RecordingsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // Filter States - Default to 'week'
   const [timeRange, setTimeRange] = useState<TimeRangeFilter>('week');
@@ -133,6 +136,32 @@ export const RecordingsPage: React.FC = () => {
       loadRecordings(page);
     } catch (err: any) {
       showToast.error('Error al eliminar', err.message || 'No se pudo eliminar el registro.');
+    }
+  };
+
+  const handlePause = async (id: string) => {
+    setActionLoading(id);
+    try {
+      await fetchApi(`/api/bot/recordings/${id}/pause`, { method: 'POST' });
+      showToast.success('Grabación pausada', 'El bot ha pausado la grabación.');
+      await loadRecordings(page);
+    } catch (err: any) {
+      showToast.error('Error al pausar', err.message || 'No se pudo pausar la grabación.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleResume = async (id: string) => {
+    setActionLoading(id);
+    try {
+      await fetchApi(`/api/bot/recordings/${id}/resume`, { method: 'POST' });
+      showToast.success('Grabación reanudada', 'El bot continúa grabando normalmente.');
+      await loadRecordings(page);
+    } catch (err: any) {
+      showToast.error('Error al reanudar', err.message || 'No se pudo reanudar la grabación.');
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -372,6 +401,7 @@ export const RecordingsPage: React.FC = () => {
                 <option value="all">Todos los estados</option>
                 <option value="completed">Completadas</option>
                 <option value="recording">En Curso</option>
+                <option value="paused">En Pausa</option>
                 <option value="failed">Fallidas</option>
                 <option value="cancelled">Canceladas</option>
               </select>
@@ -536,6 +566,11 @@ export const RecordingsPage: React.FC = () => {
                           <span className="inline-flex items-center gap-1.5 text-[11px] text-rose-700 dark:text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2.5 py-0.5 rounded-full font-bold animate-pulse">
                             En Curso
                           </span>
+                        ) : rec.status === 'paused' ? (
+                          <span className="inline-flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-400 bg-amber-500/15 border border-amber-500/30 px-2.5 py-0.5 rounded-full font-bold">
+                            <Pause className="w-3 h-3 text-amber-500" />
+                            En Pausa
+                          </span>
                         ) : rec.status === 'failed' ? (
                           <span
                             title={rec.error_message || 'Error desconocido'}
@@ -562,15 +597,39 @@ export const RecordingsPage: React.FC = () => {
                       {/* Actions */}
                       <td className="py-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-2">
-                          {(rec.status === 'recording' || rec.status === 'pending') && (
-                            <button
-                              onClick={() => setSelectedForStop({ id: rec.id, title: rec.meeting_title || 'Reunión' })}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-600 dark:text-rose-400 hover:text-white border border-rose-500/20 font-bold text-[11px] transition-all active:scale-95 cursor-pointer"
-                              title="Detener o cancelar grabación"
-                            >
-                              <Square className="w-3 h-3 fill-current" />
-                              <span>Detener</span>
-                            </button>
+                          {(rec.status === 'recording' || rec.status === 'paused' || rec.status === 'pending') && (
+                            <>
+                              {rec.status === 'paused' ? (
+                                <button
+                                  onClick={() => handleResume(rec.id)}
+                                  disabled={actionLoading === rec.id}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500 text-emerald-600 dark:text-emerald-400 hover:text-white border border-emerald-500/20 font-bold text-[11px] transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                                  title="Reanudar grabación"
+                                >
+                                  {actionLoading === rec.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 fill-current" />}
+                                  <span>Reanudar</span>
+                                </button>
+                              ) : rec.status === 'recording' ? (
+                                <button
+                                  onClick={() => handlePause(rec.id)}
+                                  disabled={actionLoading === rec.id}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500 text-amber-600 dark:text-amber-400 hover:text-white border border-amber-500/20 font-bold text-[11px] transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                                  title="Pausar grabación"
+                                >
+                                  {actionLoading === rec.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Pause className="w-3 h-3 fill-current" />}
+                                  <span>Pausar</span>
+                                </button>
+                              ) : null}
+
+                              <button
+                                onClick={() => setSelectedForStop({ id: rec.id, title: rec.meeting_title || 'Reunión' })}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-600 dark:text-rose-400 hover:text-white border border-rose-500/20 font-bold text-[11px] transition-all active:scale-95 cursor-pointer"
+                                title="Detener o cancelar grabación"
+                              >
+                                <Square className="w-3 h-3 fill-current" />
+                                <span>Detener</span>
+                              </button>
+                            </>
                           )}
 
                           <button
@@ -618,6 +677,8 @@ export const RecordingsPage: React.FC = () => {
                 key={rec.id}
                 recording={rec}
                 onStop={(r) => setSelectedForStop(r)}
+                onPause={handlePause}
+                onResume={handleResume}
                 onDelete={(id) => deleteRecording(id)}
                 showDelete={true}
               />
