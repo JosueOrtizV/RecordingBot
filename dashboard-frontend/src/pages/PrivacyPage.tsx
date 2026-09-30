@@ -20,6 +20,21 @@ const SPANISH_ANCHORS = [
   'uso-limitado',
 ];
 
+const ANCHOR_MAP: Record<string, { es: string; en: string }> = {
+  'datos-recopilados': { es: 'datos-recopilados', en: 'data-accessed' },
+  'data-accessed': { es: 'datos-recopilados', en: 'data-accessed' },
+  'uso-de-datos': { es: 'uso-de-datos', en: 'data-use' },
+  'data-use': { es: 'uso-de-datos', en: 'data-use' },
+  'transferencia-de-datos': { es: 'transferencia-de-datos', en: 'data-sharing' },
+  'data-sharing': { es: 'transferencia-de-datos', en: 'data-sharing' },
+  'proteccion-de-datos': { es: 'proteccion-de-datos', en: 'data-protection' },
+  'data-protection': { es: 'proteccion-de-datos', en: 'data-protection' },
+  'retencion-y-eliminacion': { es: 'retencion-y-eliminacion', en: 'data-retention-deletion' },
+  'data-retention-deletion': { es: 'retencion-y-eliminacion', en: 'data-retention-deletion' },
+  'uso-limitado': { es: 'uso-limitado', en: 'limited-use' },
+  'limited-use': { es: 'uso-limitado', en: 'limited-use' },
+};
+
 export const PrivacyPage: React.FC = () => {
   const [lang, setLang] = useState<'es' | 'en'>(() => {
     if (typeof window !== 'undefined') {
@@ -31,34 +46,51 @@ export const PrivacyPage: React.FC = () => {
     return 'es';
   });
 
+  const highlightAndScroll = (id: string) => {
+    setTimeout(() => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        el.classList.add('ring-2', 'ring-indigo-500', 'ring-offset-4', 'dark:ring-offset-slate-900', 'rounded-2xl', 'transition-all');
+        setTimeout(() => {
+          el.classList.remove('ring-2', 'ring-indigo-500', 'ring-offset-4', 'dark:ring-offset-slate-900', 'rounded-2xl');
+        }, 2500);
+      }
+    }, 100);
+  };
+
+  const switchLanguage = (newLang: 'es' | 'en') => {
+    setLang(newLang);
+    const currentHash = window.location.hash.replace('#', '');
+    if (currentHash && ANCHOR_MAP[currentHash]) {
+      const newHash = ANCHOR_MAP[currentHash][newLang];
+      window.history.replaceState(null, '', `${window.location.pathname}#${newHash}`);
+      highlightAndScroll(newHash);
+    }
+  };
+
   useEffect(() => {
-    const handleScrollToHash = () => {
+    const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '');
       if (!hash) return;
 
-      if (ENGLISH_ANCHORS.includes(hash) && lang !== 'en') {
+      if (ENGLISH_ANCHORS.includes(hash)) {
         setLang('en');
-      } else if (SPANISH_ANCHORS.includes(hash) && lang !== 'es') {
+      } else if (SPANISH_ANCHORS.includes(hash)) {
         setLang('es');
       }
 
-      // Allow React to re-render in case language changed
-      setTimeout(() => {
-        const el = document.getElementById(hash);
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          el.classList.add('ring-2', 'ring-indigo-500', 'ring-offset-4', 'dark:ring-offset-slate-900', 'rounded-2xl', 'transition-all');
-          setTimeout(() => {
-            el.classList.remove('ring-2', 'ring-indigo-500', 'ring-offset-4', 'dark:ring-offset-slate-900', 'rounded-2xl');
-          }, 3000);
-        }
-      }, 100);
+      highlightAndScroll(hash);
     };
 
-    handleScrollToHash();
-    window.addEventListener('hashchange', handleScrollToHash);
-    return () => window.removeEventListener('hashchange', handleScrollToHash);
-  }, [lang]);
+    const initialHash = window.location.hash.replace('#', '');
+    if (initialHash) {
+      highlightAndScroll(initialHash);
+    }
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 py-12 px-4 sm:px-6 lg:px-8">
@@ -84,7 +116,7 @@ export const PrivacyPage: React.FC = () => {
             {/* Language Toggle */}
             <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700">
               <button
-                onClick={() => setLang('es')}
+                onClick={() => switchLanguage('es')}
                 className={`px-3 py-1.5 rounded-lg transition-all ${
                   lang === 'es'
                     ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
@@ -94,7 +126,7 @@ export const PrivacyPage: React.FC = () => {
                 Español
               </button>
               <button
-                onClick={() => setLang('en')}
+                onClick={() => switchLanguage('en')}
                 className={`px-3 py-1.5 rounded-lg transition-all ${
                   lang === 'en'
                     ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
