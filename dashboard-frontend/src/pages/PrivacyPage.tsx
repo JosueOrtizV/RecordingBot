@@ -1,9 +1,64 @@
-import React, { useState } from 'react';
-import { Shield, ArrowLeft, CheckCircle2, Lock, Database, Trash2, Share2, Eye } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Shield, ArrowLeft, CheckCircle2, Lock, Database, Trash2, Share2, Eye, Bookmark } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+const ENGLISH_ANCHORS = [
+  'data-accessed',
+  'data-use',
+  'data-sharing',
+  'data-protection',
+  'data-retention-deletion',
+  'limited-use',
+];
+
+const SPANISH_ANCHORS = [
+  'datos-recopilados',
+  'uso-de-datos',
+  'transferencia-de-datos',
+  'proteccion-de-datos',
+  'retencion-y-eliminacion',
+  'uso-limitado',
+];
+
 export const PrivacyPage: React.FC = () => {
-  const [lang, setLang] = useState<'es' | 'en'>('es');
+  const [lang, setLang] = useState<'es' | 'en'>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.replace('#', '');
+      if (ENGLISH_ANCHORS.includes(hash) || window.location.search.includes('lang=en')) {
+        return 'en';
+      }
+    }
+    return 'es';
+  });
+
+  useEffect(() => {
+    const handleScrollToHash = () => {
+      const hash = window.location.hash.replace('#', '');
+      if (!hash) return;
+
+      if (ENGLISH_ANCHORS.includes(hash) && lang !== 'en') {
+        setLang('en');
+      } else if (SPANISH_ANCHORS.includes(hash) && lang !== 'es') {
+        setLang('es');
+      }
+
+      // Allow React to re-render in case language changed
+      setTimeout(() => {
+        const el = document.getElementById(hash);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          el.classList.add('ring-2', 'ring-indigo-500', 'ring-offset-4', 'dark:ring-offset-slate-900', 'rounded-2xl', 'transition-all');
+          setTimeout(() => {
+            el.classList.remove('ring-2', 'ring-indigo-500', 'ring-offset-4', 'dark:ring-offset-slate-900', 'rounded-2xl');
+          }, 3000);
+        }
+      }, 100);
+    };
+
+    handleScrollToHash();
+    window.addEventListener('hashchange', handleScrollToHash);
+    return () => window.removeEventListener('hashchange', handleScrollToHash);
+  }, [lang]);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 py-12 px-4 sm:px-6 lg:px-8">
@@ -60,6 +115,59 @@ export const PrivacyPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Quick Navigation Index (TOC) */}
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 space-y-2.5">
+          <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <Bookmark className="w-3.5 h-3.5 text-indigo-500" />
+            <span>{lang === 'es' ? 'Índice de Navegación Rápida' : 'Quick Navigation Index'}</span>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            {lang === 'es' ? (
+              <>
+                <a href="#datos-recopilados" className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors">
+                  2. Datos Recopilados
+                </a>
+                <a href="#uso-de-datos" className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors">
+                  3. Uso de Datos
+                </a>
+                <a href="#transferencia-de-datos" className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors">
+                  4. Transferencia y Terceros
+                </a>
+                <a href="#proteccion-de-datos" className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors">
+                  5. Protección y Seguridad
+                </a>
+                <a href="#retencion-y-eliminacion" className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors">
+                  6. Retención y Eliminación
+                </a>
+                <a href="#uso-limitado" className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors">
+                  7. Uso Limitado Google
+                </a>
+              </>
+            ) : (
+              <>
+                <a href="#data-accessed" className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors">
+                  2. Data Accessed
+                </a>
+                <a href="#data-use" className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors">
+                  3. Data Use
+                </a>
+                <a href="#data-sharing" className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors">
+                  4. Sharing & Disclosure
+                </a>
+                <a href="#data-protection" className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors">
+                  5. Protection & Security
+                </a>
+                <a href="#data-retention-deletion" className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors">
+                  6. Retention & Deletion
+                </a>
+                <a href="#limited-use" className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium transition-colors">
+                  7. Limited Use Policy
+                </a>
+              </>
+            )}
+          </div>
+        </div>
+
         {/* SPANISH VERSION */}
         {lang === 'es' && (
           <div className="space-y-8 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
@@ -78,7 +186,8 @@ export const PrivacyPage: React.FC = () => {
             </section>
 
             {/* Section 2 - GOOGLE USER DATA ACCESSED */}
-            <section id="datos-recopilados" className="space-y-4">
+            <section id="datos-recopilados" className="space-y-4 scroll-mt-24 p-2">
+              <span id="data-accessed" className="block -mt-24 pt-24" />
               <div className="flex items-center gap-2">
                 <Eye className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -129,7 +238,8 @@ export const PrivacyPage: React.FC = () => {
             </section>
 
             {/* Section 3 - HOW GOOGLE USER DATA IS USED */}
-            <section id="uso-de-datos" className="space-y-4">
+            <section id="uso-de-datos" className="space-y-4 scroll-mt-24 p-2">
+              <span id="data-use" className="block -mt-24 pt-24" />
               <div className="flex items-center gap-2">
                 <Database className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -167,7 +277,8 @@ export const PrivacyPage: React.FC = () => {
             </section>
 
             {/* Section 4 - DATA SHARING & DISCLOSURE */}
-            <section id="transferencia-de-datos" className="space-y-4">
+            <section id="transferencia-de-datos" className="space-y-4 scroll-mt-24 p-2">
+              <span id="data-sharing" className="block -mt-24 pt-24" />
               <div className="flex items-center gap-2">
                 <Share2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -194,7 +305,8 @@ export const PrivacyPage: React.FC = () => {
             </section>
 
             {/* Section 5 - DATA PROTECTION & SECURITY */}
-            <section id="proteccion-de-datos" className="space-y-4">
+            <section id="proteccion-de-datos" className="space-y-4 scroll-mt-24 p-2">
+              <span id="data-protection" className="block -mt-24 pt-24" />
               <div className="flex items-center gap-2">
                 <Lock className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -221,7 +333,8 @@ export const PrivacyPage: React.FC = () => {
             </section>
 
             {/* Section 6 - DATA RETENTION & DELETION */}
-            <section id="retencion-y-eliminacion" className="space-y-4 p-5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+            <section id="retencion-y-eliminacion" className="space-y-4 scroll-mt-24 p-5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+              <span id="data-retention-deletion" className="block -mt-24 pt-24" />
               <div className="flex items-center gap-2">
                 <Trash2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
@@ -253,7 +366,8 @@ export const PrivacyPage: React.FC = () => {
             </section>
 
             {/* Section 7 - GOOGLE LIMITED USE REQUIREMENT */}
-            <section id="uso-limitado" className="space-y-3 p-5 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 text-slate-700 dark:text-slate-200">
+            <section id="uso-limitado" className="space-y-3 scroll-mt-24 p-5 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 text-slate-700 dark:text-slate-200">
+              <span id="limited-use" className="block -mt-24 pt-24" />
               <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <span>7. Declaración de Cumplimiento: Requisitos de Uso Limitado de Google</span>
@@ -298,7 +412,8 @@ export const PrivacyPage: React.FC = () => {
             </section>
 
             {/* Section 2 - GOOGLE USER DATA ACCESSED */}
-            <section id="data-accessed" className="space-y-4">
+            <section id="data-accessed" className="space-y-4 scroll-mt-24 p-2">
+              <span id="datos-recopilados" className="block -mt-24 pt-24" />
               <div className="flex items-center gap-2">
                 <Eye className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -349,7 +464,8 @@ export const PrivacyPage: React.FC = () => {
             </section>
 
             {/* Section 3 - HOW WE USE GOOGLE USER DATA */}
-            <section id="data-use" className="space-y-4">
+            <section id="data-use" className="space-y-4 scroll-mt-24 p-2">
+              <span id="uso-de-datos" className="block -mt-24 pt-24" />
               <div className="flex items-center gap-2">
                 <Database className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -387,7 +503,8 @@ export const PrivacyPage: React.FC = () => {
             </section>
 
             {/* Section 4 - SHARING, TRANSFER AND DISCLOSURE */}
-            <section id="data-sharing" className="space-y-4">
+            <section id="data-sharing" className="space-y-4 scroll-mt-24 p-2">
+              <span id="transferencia-de-datos" className="block -mt-24 pt-24" />
               <div className="flex items-center gap-2">
                 <Share2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -414,7 +531,8 @@ export const PrivacyPage: React.FC = () => {
             </section>
 
             {/* Section 5 - DATA PROTECTION & SECURITY */}
-            <section id="data-protection" className="space-y-4">
+            <section id="data-protection" className="space-y-4 scroll-mt-24 p-2">
+              <span id="proteccion-de-datos" className="block -mt-24 pt-24" />
               <div className="flex items-center gap-2">
                 <Lock className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -441,7 +559,8 @@ export const PrivacyPage: React.FC = () => {
             </section>
 
             {/* Section 6 - RETENTION AND DELETION */}
-            <section id="data-retention-deletion" className="space-y-4 p-5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+            <section id="data-retention-deletion" className="space-y-4 scroll-mt-24 p-5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
+              <span id="retencion-y-eliminacion" className="block -mt-24 pt-24" />
               <div className="flex items-center gap-2">
                 <Trash2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
@@ -473,7 +592,8 @@ export const PrivacyPage: React.FC = () => {
             </section>
 
             {/* Section 7 - GOOGLE LIMITED USE DISCLOSURE */}
-            <section id="limited-use" className="space-y-3 p-5 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 text-slate-700 dark:text-slate-200">
+            <section id="limited-use" className="space-y-3 scroll-mt-24 p-5 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 text-slate-700 dark:text-slate-200">
+              <span id="uso-limitado" className="block -mt-24 pt-24" />
               <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                 <span>7. Google API Services User Data Policy Compliance</span>
