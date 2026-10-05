@@ -17,7 +17,15 @@ router.get('/:token', async (req: Request, res: Response) => {
 
     const recRes = await query(
       `SELECT r.id, r.meeting_title, r.meeting_url, r.drive_file_id, r.drive_url,
-              r.duration_seconds, r.recording_mode, r.status, r.transcript_text, r.ai_minutes_text,
+              r.duration_seconds, r.recording_mode, r.status, r.transcript_text,
+              COALESCE(
+                r.ai_minutes_text,
+                (SELECT r2.ai_minutes_text FROM recordings r2 
+                 WHERE r2.dedup_group_id = r.dedup_group_id 
+                   AND r2.dedup_group_id IS NOT NULL 
+                   AND r2.ai_minutes_text IS NOT NULL 
+                 LIMIT 1)
+              ) as ai_minutes_text,
               r.share_access, r.share_token, r.created_at, r.started_at, r.completed_at,
               TO_CHAR(COALESCE(r.started_at, r.created_at) AT TIME ZONE 'America/Mexico_City', 'HH24:MI:SS') as started_at_local,
               u.name as owner_name

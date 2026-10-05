@@ -9,6 +9,9 @@ import { config } from '../config.js';
 
 const router = Router();
 
+// In-flight minutes generation promises to prevent duplicate simultaneous executions
+const inFlightMinutes = new Map<string, Promise<string>>();
+
 // GET /api/recordings
 router.get('/', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -143,6 +146,14 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
 
     const recordingRes = await query(
       `SELECT r.*,
+              COALESCE(
+                r.ai_minutes_text,
+                (SELECT r2.ai_minutes_text FROM recordings r2 
+                 WHERE r2.dedup_group_id = r.dedup_group_id 
+                   AND r2.dedup_group_id IS NOT NULL 
+                   AND r2.ai_minutes_text IS NOT NULL 
+                 LIMIT 1)
+              ) as ai_minutes_text,
               TO_CHAR(COALESCE(r.started_at, r.created_at) AT TIME ZONE 'America/Mexico_City', 'HH24:MI:SS') as started_at_local,
               u_owner.name as owner_name,
               u_owner.email as owner_email,
@@ -361,10 +372,11 @@ router.post('/:id/minutes', requireAuth, async (req: Request, res: Response) => 
   try {
     const userId = req.user!.id;
     const id = req.params.id;
+    const force = req.query.force === 'true';
 
-    // 1. Fetch recording details
+    // 1. Fetch recording details including dedup_group_id
     const recDb = await query(
-      'SELECT transcript_text, meeting_title, ai_minutes_text FROM recordings WHERE id = $1 AND user_id = $2',
+      'SELECT id, user_id, transcript_text, meeting_title, ai_minutes_text, dedup_group_id FROM recordings WHERE id = $1 AND user_id = $2',
       [id, userId]
     );
 
@@ -374,6 +386,44 @@ router.post('/:id/minutes', requireAuth, async (req: Request, res: Response) => 
     }
 
     const rec = recDb.rows[0];
+
+    // If already generated and user is not explicitly forcing regeneration, return existing
+    if (!force && rec.ai_minutes_text && rec.ai_minutes_text.trim().length > 0) {
+      res.json({
+        success: true,
+        minutes: rec.ai_minutes_text,
+        meetingTitle: rec.meeting_title,
+      });
+      return;
+    }
+
+    // Check if another teammate in the same deduplication group already generated minutes
+    if (!force && rec.dedup_group_id) {
+      const groupSibling = await query(
+        `SELECT ai_minutes_text FROM recordings
+         WHERE dedup_group_id = $1 AND ai_minutes_text IS NOT NULL AND length(ai_minutes_text) > 0
+         LIMIT 1`,
+        [rec.dedup_group_id]
+      );
+
+      if (groupSibling.rows.length > 0 && groupSibling.rows[0].ai_minutes_text) {
+        const existingMinutes = groupSibling.rows[0].ai_minutes_text;
+        // Sync to all recordings in this dedup group missing it
+        await query(
+          'UPDATE recordings SET ai_minutes_text = $1 WHERE dedup_group_id = $2 AND (ai_minutes_text IS NULL OR length(ai_minutes_text) = 0)',
+          [existingMinutes, rec.dedup_group_id]
+        );
+
+        res.json({
+          success: true,
+          minutes: existingMinutes,
+          meetingTitle: rec.meeting_title,
+          sharedFromTeam: true,
+        });
+        return;
+      }
+    }
+
     if (!rec.transcript_text || rec.transcript_text.trim().length === 0) {
       res.status(400).json({
         error: 'Esta grabación no tiene transcripción disponible para generar la minuta.',
@@ -388,24 +438,53 @@ router.post('/:id/minutes', requireAuth, async (req: Request, res: Response) => 
     );
     const customPrompt = settingsDb.rows[0]?.minutes_prompt || undefined;
 
-    // 3. Generate minutes via Gemini service
-    const generatedMinutes = await generateMeetingMinutes({
-      transcript: rec.transcript_text,
-      meetingTitle: rec.meeting_title || 'Reunión',
-      customPrompt,
-    });
+    // 3. Avoid duplicate concurrent generation for the same recording or dedup group
+    const lockKey = rec.dedup_group_id ? `group:${rec.dedup_group_id}` : `rec:${id}`;
+    if (inFlightMinutes.has(lockKey)) {
+      console.log(`[Minutes] Awaiting existing in-flight generation for lock key ${lockKey}...`);
+      const generatedMinutes = await inFlightMinutes.get(lockKey)!;
+      res.json({
+        success: true,
+        minutes: generatedMinutes,
+        meetingTitle: rec.meeting_title,
+      });
+      return;
+    }
 
-    // 4. Save generated minutes into database
-    await query(
-      'UPDATE recordings SET ai_minutes_text = $1 WHERE id = $2 AND user_id = $3',
-      [generatedMinutes, id, userId]
-    );
+    const genPromise = (async () => {
+      const generated = await generateMeetingMinutes({
+        transcript: rec.transcript_text,
+        meetingTitle: rec.meeting_title || 'Reunión',
+        customPrompt,
+      });
 
-    res.json({
-      success: true,
-      minutes: generatedMinutes,
-      meetingTitle: rec.meeting_title,
-    });
+      // 4. Save generated minutes into database for all users in the same dedup group
+      if (rec.dedup_group_id) {
+        await query(
+          'UPDATE recordings SET ai_minutes_text = $1 WHERE dedup_group_id = $2',
+          [generated, rec.dedup_group_id]
+        );
+      } else {
+        await query(
+          'UPDATE recordings SET ai_minutes_text = $1 WHERE id = $2 AND user_id = $3',
+          [generated, id, userId]
+        );
+      }
+
+      return generated;
+    })();
+
+    inFlightMinutes.set(lockKey, genPromise);
+    try {
+      const generatedMinutes = await genPromise;
+      res.json({
+        success: true,
+        minutes: generatedMinutes,
+        meetingTitle: rec.meeting_title,
+      });
+    } finally {
+      inFlightMinutes.delete(lockKey);
+    }
   } catch (err: any) {
     console.error('Error generating minutes with Gemini:', err);
     res.status(500).json({ error: err.message || 'Error al generar la minuta con Gemini' });
@@ -419,7 +498,17 @@ router.get('/:id/minutes', requireAuth, async (req: Request, res: Response) => {
     const id = req.params.id;
 
     const resDb = await query(
-      'SELECT ai_minutes_text, meeting_title FROM recordings WHERE id = $1 AND user_id = $2',
+      `SELECT COALESCE(
+                r.ai_minutes_text,
+                (SELECT r2.ai_minutes_text FROM recordings r2 
+                 WHERE r2.dedup_group_id = r.dedup_group_id 
+                   AND r2.dedup_group_id IS NOT NULL 
+                   AND r2.ai_minutes_text IS NOT NULL 
+                 LIMIT 1)
+              ) as ai_minutes_text,
+              r.meeting_title
+       FROM recordings r
+       WHERE r.id = $1 AND r.user_id = $2`,
       [id, userId]
     );
 

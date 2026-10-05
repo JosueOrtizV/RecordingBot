@@ -59,14 +59,18 @@ export const MinutesView: React.FC<MinutesViewProps> = ({
     return () => clearInterval(interval);
   }, [loading]);
 
-  const handleGenerateMinutes = async () => {
+  const handleGenerateMinutes = async (force: boolean = false) => {
     if (!recordingId || loading) return;
     setLoading(true);
     setError(null);
 
     try {
+      const endpoint = force
+        ? `/api/recordings/${recordingId}/minutes?force=true`
+        : `/api/recordings/${recordingId}/minutes`;
+
       const res = await fetchApi<{ success: boolean; minutes: string }>(
-        `/api/recordings/${recordingId}/minutes`,
+        endpoint,
         {
           method: 'POST',
         }
@@ -223,7 +227,7 @@ export const MinutesView: React.FC<MinutesViewProps> = ({
           {!readOnly ? (
             <div className="pt-2">
               <button
-                onClick={handleGenerateMinutes}
+                onClick={() => handleGenerateMinutes(false)}
                 disabled={!hasTranscript}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 via-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold text-xs sm:text-sm shadow-md shadow-indigo-600/25 transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none cursor-pointer"
               >
@@ -300,7 +304,7 @@ export const MinutesView: React.FC<MinutesViewProps> = ({
           {/* Regenerate Button (Only for owner/authenticated user) */}
           {!readOnly && (
             <button
-              onClick={handleGenerateMinutes}
+              onClick={() => handleGenerateMinutes(true)}
               disabled={loading}
               className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
               title="Regenerar minuta con el prompt actual"
