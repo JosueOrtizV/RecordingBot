@@ -251,11 +251,32 @@ router.get('/:id/stream', async (req: Request, res: Response) => {
       }
     }
 
-    // Or authorized via valid share token
-    if (!isAuthorized && token && recording.share_token === token) {
-      if (recording.share_access === 'public') {
+    // Or authorized via valid share token or public access
+    if (!isAuthorized) {
+      if (token && token.trim().length > 0) {
+        if (recording.share_token === token) {
+          if (recording.share_access === 'public') {
+            isAuthorized = true;
+          } else if (recording.share_access === 'registered' && userId) {
+            isAuthorized = true;
+          }
+        } else if (recording.dedup_group_id) {
+          const groupShare = await query(
+            'SELECT share_access FROM recordings WHERE dedup_group_id = $1 AND share_token::text = $2 LIMIT 1',
+            [recording.dedup_group_id, token]
+          );
+          if (groupShare.rows.length > 0) {
+            const groupAccess = groupShare.rows[0].share_access;
+            if (groupAccess === 'public' || (groupAccess === 'registered' && userId)) {
+              isAuthorized = true;
+            }
+          }
+        }
+      } else if (recording.share_access === 'public') {
+        // If recording is explicitly marked as public, allow streaming
         isAuthorized = true;
       } else if (recording.share_access === 'registered' && userId) {
+        // If recording is for registered users and user is logged in
         isAuthorized = true;
       }
     }

@@ -98,6 +98,7 @@ router.get('/:token', async (req: Request, res: Response) => {
         transcript_text: recording.transcript_text,
         ai_minutes_text: recording.ai_minutes_text,
         share_access: recording.share_access,
+        share_token: recording.share_token,
         created_at: recording.created_at,
         started_at: recording.started_at,
         started_at_local: recording.started_at_local,

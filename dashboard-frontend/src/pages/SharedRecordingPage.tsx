@@ -120,6 +120,8 @@ export const SharedRecordingPage: React.FC = () => {
         recording.drive_url?.match(/[?&]id=([a-zA-Z0-9_-]+)/))?.[1]
     : null;
 
+  const streamToken = token || recording?.share_token || '';
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col transition-colors duration-200 antialiased selection:bg-indigo-500 selection:text-white">
       {/* Standalone Public Navigation Bar */}
@@ -324,10 +326,11 @@ export const SharedRecordingPage: React.FC = () => {
                             <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-black border border-slate-800 shadow-inner">
                               <video
                                 ref={mediaRef as React.RefObject<HTMLVideoElement>}
-                                src={`/api/recordings/${recording.id}/stream?token=${recording.share_token || ''}`}
+                                src={`/api/recordings/${recording.id}/stream?token=${streamToken}`}
                                 onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                                 controls
                                 playsInline
+                                preload="metadata"
                                 className="w-full h-full object-contain"
                               />
                             </div>
@@ -402,9 +405,10 @@ export const SharedRecordingPage: React.FC = () => {
 
                               <audio
                                 ref={mediaRef as React.RefObject<HTMLAudioElement>}
-                                src={`/api/recordings/${recording.id}/stream?token=${recording.share_token || ''}`}
+                                src={`/api/recordings/${recording.id}/stream?token=${streamToken}`}
                                 onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                                 controls
+                                preload="metadata"
                                 className="w-full max-w-md accent-indigo-500"
                               />
 

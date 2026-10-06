@@ -397,10 +397,11 @@ export const RecordingDetailPage: React.FC = () => {
                     <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-black border border-slate-800 shadow-inner">
                       <video
                         ref={mediaRef as React.RefObject<HTMLVideoElement>}
-                        src={`/api/recordings/${recording.id}/stream`}
+                        src={`/api/recordings/${recording.id}/stream${recording.share_token ? `?token=${recording.share_token}` : ''}`}
                         onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                         controls
                         playsInline
+                        preload="metadata"
                         className="w-full h-full object-contain"
                       />
                     </div>
@@ -477,9 +478,10 @@ export const RecordingDetailPage: React.FC = () => {
                       {/* Native HTML5 Audio Tag */}
                       <audio
                         ref={mediaRef as React.RefObject<HTMLAudioElement>}
-                        src={`/api/recordings/${recording.id}/stream`}
+                        src={`/api/recordings/${recording.id}/stream${recording.share_token ? `?token=${recording.share_token}` : ''}`}
                         onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                         controls
+                        preload="metadata"
                         className="w-full max-w-md accent-indigo-500"
                       />
 
