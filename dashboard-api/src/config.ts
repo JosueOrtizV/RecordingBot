@@ -29,8 +29,8 @@ export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   jwtSecret: process.env.JWT_SECRET || 'recordingbot-super-secret-jwt-key-change-in-prod',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
-  allowedDomains: (process.env.ALLOWED_EMAIL_DOMAINS || 'clevercloud.mx').split(',').map(d => d.trim().toLowerCase()),
-  adminEmails: (process.env.ADMIN_EMAILS || 'josue.ortiz@clevercloud.mx').split(',').map(e => e.trim().toLowerCase()),
+  allowedDomains: (process.env.ALLOWED_EMAIL_DOMAINS || '').split(',').map(d => d.trim().toLowerCase()).filter(Boolean),
+  adminEmails: (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase()).filter(Boolean),
 
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID || fileClientId,
@@ -57,5 +57,5 @@ export const config = {
   },
 
   timezone: process.env.TIMEZONE || 'America/Mexico_City',
-  botDisplayName: process.env.BOT_DISPLAY_NAME || "Josue's Notetaker",
+  botDisplayName: process.env.BOT_DISPLAY_NAME || 'AI Notetaker',
 };

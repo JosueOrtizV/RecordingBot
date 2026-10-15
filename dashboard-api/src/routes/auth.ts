@@ -49,7 +49,7 @@ router.get('/google/callback', async (req: Request, res: Response) => {
     // Check domain restriction if enabled
     if (config.allowedDomains.length > 0 && !config.allowedDomains.includes('*') && !config.allowedDomains.includes(domain)) {
       console.warn(`Unauthorized login attempt from domain @${domain} (${email})`);
-      res.redirect(`${config.frontendUrl}/login?error=${encodeURIComponent(`Dominio @${domain} no autorizado. Solo cuentas @clevercloud.mx`)}`);
+      res.redirect(`${config.frontendUrl}/login?error=${encodeURIComponent(`Dominio @${domain} no autorizado. Dominios permitidos: ${config.allowedDomains.join(', ')}`)}`);
       return;
     }
 
@@ -96,9 +96,9 @@ router.get('/google/callback', async (req: Request, res: Response) => {
     if (isNewUser) {
       const defaultRules = [
         { type: 'title_contains', val: 'Daily', reason: 'Regla por defecto: Reuniones Daily' },
-        { type: 'title_contains', val: 'Clever Daily con Líderes', reason: 'Regla por defecto' },
-        { type: 'title_contains', val: 'Clever - Sprint Plannig', reason: 'Regla por defecto' },
-        { type: 'title_contains', val: 'Sprint Retrospective', reason: 'Regla por defecto' },
+        { type: 'title_contains', val: 'Sprint Planning', reason: 'Regla por defecto: Planificación de sprint' },
+        { type: 'title_contains', val: 'Sprint Retrospective', reason: 'Regla por defecto: Retrospectiva' },
+        { type: 'title_contains', val: 'Standup', reason: 'Regla por defecto: Standup diario' },
       ];
 
       for (const rule of defaultRules) {
