@@ -563,13 +563,10 @@ class DiskUploader implements IUploader {
 
   private async ensureRequestedContainer(filePath: string): Promise<void> {
     if (this.fileExtension !== '.mp4') return;
-
-    if (await this.isMp4File(filePath)) {
-      return;
-    }
+    if (!fs.existsSync(filePath)) return;
 
     const outputPath = `${filePath}.transcoded.mp4`;
-    this._logger.info('Recording temp file is not an MP4 container. Transcoding before upload...', {
+    this._logger.info('Post-processing video recording to standard MP4 container (H.264 + AAC + faststart)...', {
       inputPath: filePath,
       outputPath,
     });
@@ -577,17 +574,24 @@ class DiskUploader implements IUploader {
     try {
       await execFileAsync('ffmpeg', [
         '-y',
+        '-fflags', '+genpts+igndts',
         '-i', filePath,
         '-c:v', 'libx264',
-        '-preset', 'veryfast',
+        '-preset', 'superfast',
+        '-crf', '25',
         '-pix_fmt', 'yuv420p',
+        '-r', '20',
         '-c:a', 'aac',
+        '-b:a', '128k',
+        '-ar', '48000',
+        '-ac', '2',
+        '-af', 'aresample=async=1:first_pts=0',
         '-movflags', '+faststart',
         outputPath,
-      ], { maxBuffer: 10 * 1024 * 1024 });
+      ], { maxBuffer: 20 * 1024 * 1024 });
 
       await fs.promises.rename(outputPath, filePath);
-      this._logger.info('Transcoded recording temp file to MP4 container before upload.', { filePath });
+      this._logger.info('Successfully transcoded recording temp file to standard MP4 container before upload.', { filePath });
     } catch (err) {
       try {
         await fs.promises.unlink(outputPath);

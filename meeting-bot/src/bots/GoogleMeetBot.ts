@@ -730,11 +730,17 @@ export class GoogleMeetBot extends MeetBotBase {
     // Dismiss "Microphone not found" and "Camera not found" notifications if present
     try {
       this._logger.info('Checking for device notifications (microphone/camera)...');
+      await this.page.mouse.move(10, 10).catch(() => {});
       const hasDeviceNotification = await this.page.evaluate(() => {
-        return document.body.innerText.includes('Microphone not found') ||
-               document.body.innerText.includes('Make sure your microphone is plugged in') ||
-               document.body.innerText.includes('Camera not found') ||
-               document.body.innerText.includes('Make sure your camera is plugged in');
+        const text = document.body.textContent || '';
+        return text.includes('Microphone not found') ||
+               text.includes('Make sure your microphone is plugged in') ||
+               text.includes('Camera not found') ||
+               text.includes('Make sure your camera is plugged in') ||
+               text.includes('No se encontró el micrófono') ||
+               text.includes('No se encontró una cámara') ||
+               text.includes('Asegúrate de que el micrófono') ||
+               text.includes('Asegúrate de que la cámara');
       });
 
       if (hasDeviceNotification) {
@@ -743,11 +749,13 @@ export class GoogleMeetBot extends MeetBotBase {
         const closeButtonsCount = await this.page.evaluate(() => {
           const allButtons = Array.from(document.querySelectorAll('button'));
           const closeButtons = allButtons.filter((btn) => {
-            const ariaLabel = btn.getAttribute('aria-label');
-            const hasCloseIcon = btn.querySelector('svg') !== null;
-            return (ariaLabel?.toLowerCase().includes('close') ||
-                    ariaLabel?.toLowerCase().includes('dismiss') ||
-                    (hasCloseIcon && btn?.offsetParent !== null && btn.innerText === ''));
+            const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+            const matIcon = btn.querySelector('i')?.textContent?.trim().toLowerCase() || '';
+            return ariaLabel.includes('close') ||
+                   ariaLabel.includes('dismiss') ||
+                   ariaLabel.includes('cerrar') ||
+                   ariaLabel.includes('descartar') ||
+                   matIcon === 'close';
           });
 
           let clickedCount = 0;
@@ -762,7 +770,7 @@ export class GoogleMeetBot extends MeetBotBase {
 
         if (closeButtonsCount > 0) {
           this._logger.info(`Successfully dismissed ${closeButtonsCount} device notification(s)`);
-          await this.page.waitForTimeout(1000);
+          await this.page.waitForTimeout(500);
         } else {
           this._logger.warn('Could not find close button for device notifications');
         }
@@ -875,7 +883,11 @@ Comandos de chat disponibles:
                   btn.click();
                 }
               }
+              if (document.activeElement instanceof HTMLElement) {
+                document.activeElement.blur();
+              }
             });
+            await this.page.mouse.move(10, 10).catch(() => {});
           }
         } else {
           this._logger.warn('[ChatNotification]: Chat textarea not found or not visible');
@@ -1034,9 +1046,9 @@ Comandos de chat disponibles:
             stream = await (navigator.mediaDevices as any).getDisplayMedia({
               video: {
                 displaySurface: 'browser',
-                width: { ideal: 1280, max: 1920 },
-                height: { ideal: 720, max: 1080 },
-                frameRate: { ideal: 30, max: 30 },
+                width: { ideal: 1280, max: 1280 },
+                height: { ideal: 720, max: 720 },
+                frameRate: isAudioOnlyMode ? { ideal: 5, max: 10 } : { ideal: 20, max: 20 },
               },
               audio: {
                 autoGainControl: false,
@@ -1068,7 +1080,7 @@ Comandos de chat disponibles:
               mimeType: selectedMimeType,
               ...(isAudioOnlyMode
                 ? { audioBitsPerSecond: 128000 }
-                : { videoBitsPerSecond: 2500000, audioBitsPerSecond: 128000 }),
+                : { videoBitsPerSecond: 1500000, audioBitsPerSecond: 128000 }),
             };
             mediaRecorder = new MediaRecorder(streamToRecord, recorderOptions);
             console.log(`Media Recorder actual mime type: ${mediaRecorder.mimeType}`);
@@ -1528,6 +1540,10 @@ Comandos de chat disponibles:
 
             const parseBotCommand = (text: string): string | null => {
               if (!text || typeof text !== 'string') return null;
+              // Fast-path filter: skip 99.99% of DOM nodes that don't contain command prefixes
+              if (!text.includes('/') && !text.includes('!')) return null;
+              if (text.length > 400) return null;
+
               if (text.includes('RecordingBot está grabando') ||
                   text.includes('Comandos de chat') ||
                   text.includes('política de privacidad') ||
@@ -1576,7 +1592,8 @@ Comandos de chat disponibles:
               }
             });
 
-            chatObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+            // Do not observe characterData (which fires on every live subtitle update)
+            chatObserver.observe(document.body, { childList: true, subtree: true });
           };
 
           initChatCommandListener();
@@ -1591,33 +1608,36 @@ Comandos de chat disponibles:
             dismissModalsInterval = setInterval(() => {
               try {
                 const buttons = document.querySelectorAll('button');
-                const dismissButtons = Array.from(buttons).filter((button) => button?.offsetParent !== null && /Got it|Ok/i.test(button?.innerText || ''));
+                const dismissButtons = Array.from(buttons).filter((button) => button?.offsetParent !== null && /Got it|Ok|Entendido/i.test(button?.textContent || ''));
                 if (dismissButtons.length > 0) {
                   console.log('Found dismiss button, clicking it...', dismissButtons[0]);
                   dismissButtons[0].click();
                 }
 
-                // Dismiss "Microphone not found" and "Camera not found" notifications
-                const bodyText = document.body.innerText;
+                // Dismiss "Microphone not found" and "Camera not found" notifications (English, Spanish, German)
+                const bodyText = document.body.textContent || '';
                 if (bodyText.includes('Microphone not found') ||
                     bodyText.includes('Make sure your microphone is plugged in') ||
                     bodyText.includes('Camera not found') ||
                     bodyText.includes('Make sure your camera is plugged in') ||
+                    bodyText.includes('No se encontró el micrófono') ||
+                    bodyText.includes('No se encontró una cámara') ||
+                    bodyText.includes('Asegúrate de que el micrófono') ||
+                    bodyText.includes('Asegúrate de que la cámara') ||
                     bodyText.includes('Mikrofonproblem') ||
                     bodyText.includes('Kameraproblem')) {
                   console.log('Found device notification (microphone/camera), attempting to dismiss...');
-                  // Look for close button (X) near the notification
                   const allButtons = Array.from(document.querySelectorAll('button'));
                   const closeButtons = allButtons.filter((btn) => {
-                    const ariaLabel = btn.getAttribute('aria-label');
-                    const hasCloseIcon = btn.querySelector('svg') !== null;
-                    // Look for close/dismiss buttons
-                    return (ariaLabel?.toLowerCase().includes('close') ||
-                            ariaLabel?.toLowerCase().includes('dismiss') ||
-                            (hasCloseIcon && btn?.offsetParent !== null && btn.innerText === ''));
+                    const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+                    const matIcon = btn.querySelector('i')?.textContent?.trim().toLowerCase() || '';
+                    return ariaLabel.includes('close') ||
+                           ariaLabel.includes('dismiss') ||
+                           ariaLabel.includes('cerrar') ||
+                           ariaLabel.includes('descartar') ||
+                           matIcon === 'close';
                   });
 
-                  // Click all visible close buttons to dismiss all notifications
                   closeButtons.forEach((btn) => {
                     if (btn?.offsetParent !== null) {
                       console.log('Clicking close button for device notification...');
@@ -1633,7 +1653,7 @@ Comandos de chat disponibles:
                   clearInterval(dismissModalsInterval);
                 }
               }
-            }, 2000);
+            }, 4000);
           };
 
           const detectMeetingIsOnAValidPage = () => {
@@ -1647,13 +1667,15 @@ Comandos de chat disponibles:
                   return false;
                 }
 
-                const currentBodyText = document.body.innerText;
-                if (currentBodyText.includes('You\'ve been removed from the meeting')) {
+                const currentBodyText = document.body.textContent || '';
+                if (currentBodyText.includes('You\'ve been removed from the meeting') ||
+                    currentBodyText.includes('Te quitaron de la reunión')) {
                   console.warn('Bot was removed from the meeting - ending recording on team:', userId, teamId);
                   return false;
                 }
 
                 if (currentBodyText.includes('No one responded to your request to join the call') ||
+                    currentBodyText.includes('Nadie respondió a tu solicitud para unirte') ||
                     currentBodyText.includes('Niemand hat auf Ihre Teilnahmeanfrage geantwortet')) {
                   console.warn('Bot was not admitted to the meeting - ending recording on team:', userId, teamId);
                   return false;
@@ -1662,8 +1684,8 @@ Comandos de chat disponibles:
                 // Check for basic Google Meet UI elements
                 const hasMeetElements = document.querySelector('button[aria-label="People"], button[aria-label^="People -"], button[aria-label="Personen"], button[aria-label^="Personen -"], button[aria-label="Personas"], button[aria-label^="Personas -"]') !== null ||
                                       document.querySelector('button[aria-label="Leave call"], button[aria-label="Anruf verlassen"], button[aria-label="Abandonar la llamada"], button[aria-label="Salir de la llamada"]') !== null ||
-                                      document.body.innerText.includes('Detalles de la reunión') ||
-                                      document.body.innerText.includes('Estás en la llamada') ||
+                                      currentBodyText.includes('Detalles de la reunión') ||
+                                      currentBodyText.includes('Estás en la llamada') ||
                                       document.querySelector('[data-allocation-index]') !== null ||
                                       document.querySelector('[jscontroller="k3jTEB"]') !== null;
 
