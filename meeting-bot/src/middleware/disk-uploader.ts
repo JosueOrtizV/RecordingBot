@@ -578,7 +578,7 @@ class DiskUploader implements IUploader {
         '-i', filePath,
         '-c:v', 'libx264',
         '-preset', 'superfast',
-        '-crf', '25',
+        '-crf', '20',
         '-pix_fmt', 'yuv420p',
         '-r', '20',
         '-c:a', 'aac',

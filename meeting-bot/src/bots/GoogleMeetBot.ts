@@ -1080,7 +1080,7 @@ Comandos de chat disponibles:
               mimeType: selectedMimeType,
               ...(isAudioOnlyMode
                 ? { audioBitsPerSecond: 128000 }
-                : { videoBitsPerSecond: 1500000, audioBitsPerSecond: 128000 }),
+                : { videoBitsPerSecond: 2500000, audioBitsPerSecond: 128000 }),
             };
             mediaRecorder = new MediaRecorder(streamToRecord, recorderOptions);
             console.log(`Media Recorder actual mime type: ${mediaRecorder.mimeType}`);

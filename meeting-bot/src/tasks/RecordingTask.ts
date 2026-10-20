@@ -91,7 +91,7 @@ export class RecordingTask extends Task<null, void> {
           console.log(`Media Recorder will use ${selectedMimeType} codecs...`);
           const mediaRecorder = new MediaRecorder(stream, {
             mimeType: selectedMimeType,
-            videoBitsPerSecond: 1500000,
+            videoBitsPerSecond: 2500000,
             audioBitsPerSecond: 128000,
           });
           console.log(`Media Recorder actual mime type: ${mediaRecorder.mimeType}`);

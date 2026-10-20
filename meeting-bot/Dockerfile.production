@@ -97,9 +97,6 @@ RUN mkdir -p /home/nodejs/.config/pulse \
 # Switch to non-root user
 USER nodejs
 
-# Install Playwright and its dependencies
-RUN npx playwright install
-
 # Expose the port your app runs on
 EXPOSE 3000
 
@@ -110,4 +107,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Set the entry point
 ENTRYPOINT ["/usr/src/app/xvfb-run-wrapper"]
 
-CMD ["node", "dist/index.js"] 
+CMD ["node", "dist/index.js"]
