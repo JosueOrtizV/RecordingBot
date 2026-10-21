@@ -261,7 +261,7 @@ export async function pollCalendar(): Promise<void> {
       eventId: primary.eventId,
       userId: primary.user.id,
       botName: group.length > 1
-        ? `RecordingBot (${group.map(g => (g.user.name || g.user.email.split('@')[0]).replace(/^Ing\.\s+/i, '').split(' ')[0]).join(' & ')})`
+        ? 'RecordingBot · Notetaker'
         : (primary.user.bot_display_name || (primary.user.name ? `${primary.user.name}'s Notetaker` : config.botDisplayName)),
       recordingMode: selectedMode,
       userTokens: primary.user.google_tokens,
