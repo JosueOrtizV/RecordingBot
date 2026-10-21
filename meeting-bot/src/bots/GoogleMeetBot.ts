@@ -801,12 +801,18 @@ export class GoogleMeetBot extends MeetBotBase {
   private async sendMeetingChatMessage(customMessage?: string, botName?: string): Promise<void> {
     try {
       this._logger.info('[ChatNotification]: Attempting to send message to Google Meet chat...', { customMessage: !!customMessage });
+      await this.page.evaluate(() => { (window as any).__rbSendingChatMessage = true; }).catch(() => {});
       await this.page.waitForTimeout(1000);
 
       // 1. Dismiss any blocking notifications (like "No se encontró una cámara")
       await this.page.evaluate(() => {
         const dismissButtons = document.querySelectorAll('button[aria-label="Cerrar"], button[aria-label="Close"], button[aria-label="Cerrar notificación"]');
-        dismissButtons.forEach(btn => (btn as HTMLElement).click());
+        dismissButtons.forEach(btn => {
+          const rect = (btn as HTMLElement).getBoundingClientRect();
+          if (rect.top > 150 && !(btn as HTMLElement).closest('aside, [role="complementary"]')) {
+            (btn as HTMLElement).click();
+          }
+        });
       });
       await this.page.waitForTimeout(300);
 
@@ -860,6 +866,7 @@ Comandos de chat disponibles:
           const messageText = customMessage || defaultWelcome;
           await targetTextarea.fill(messageText);
           await this.page.waitForTimeout(400);
+          await targetTextarea.focus().catch(() => {});
           
           // Press Enter to send
           await this.page.keyboard.press('Enter');
@@ -897,6 +904,8 @@ Comandos de chat disponibles:
       }
     } catch (chatError) {
       this._logger.warn('[ChatNotification]: Failed to send chat message:', chatError);
+    } finally {
+      await this.page.evaluate(() => { (window as any).__rbSendingChatMessage = false; }).catch(() => {});
     }
   }
 
@@ -1615,8 +1624,11 @@ Comandos de chat disponibles:
                 }
 
                 // Dismiss "Microphone not found" and "Camera not found" notifications (English, Spanish, German)
+                const isChatOpenOrSending = Boolean((window as any).__rbSendingChatMessage) ||
+                  Array.from(document.querySelectorAll('textarea')).some(ta => (ta as HTMLElement).offsetParent !== null);
                 const bodyText = document.body.textContent || '';
-                if (bodyText.includes('Microphone not found') ||
+                if (!isChatOpenOrSending && (
+                    bodyText.includes('Microphone not found') ||
                     bodyText.includes('Make sure your microphone is plugged in') ||
                     bodyText.includes('Camera not found') ||
                     bodyText.includes('Make sure your camera is plugged in') ||
@@ -1625,11 +1637,15 @@ Comandos de chat disponibles:
                     bodyText.includes('Asegúrate de que el micrófono') ||
                     bodyText.includes('Asegúrate de que la cámara') ||
                     bodyText.includes('Mikrofonproblem') ||
-                    bodyText.includes('Kameraproblem')) {
+                    bodyText.includes('Kameraproblem'))) {
                   console.log('Found device notification (microphone/camera), attempting to dismiss...');
                   const allButtons = Array.from(document.querySelectorAll('button'));
                   const closeButtons = allButtons.filter((btn) => {
                     const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+                    if (ariaLabel.includes('chat') || ariaLabel.includes('panel')) return false;
+                    if (btn.closest('aside, [role="complementary"]')) return false;
+                    const rect = btn.getBoundingClientRect();
+                    if (rect.top < 150 && rect.left > window.innerWidth * 0.6) return false;
                     const matIcon = btn.querySelector('i')?.textContent?.trim().toLowerCase() || '';
                     return ariaLabel.includes('close') ||
                            ariaLabel.includes('dismiss') ||

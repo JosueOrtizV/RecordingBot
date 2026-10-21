@@ -208,7 +208,7 @@ router.post('/join', requireAuth, async (req: Request, res: Response) => {
     const jobPayload = {
       provider: 'google',
       url: canonicalUrl,
-      name: botDisplayName,
+      name: hasTeammates ? 'RecordingBot · Notetaker' : botDisplayName,
       botId,
       eventId,
       userId: user.id,
