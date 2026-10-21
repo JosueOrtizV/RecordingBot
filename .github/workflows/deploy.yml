@@ -1,7 +1,13 @@
 name: Deploy RecordingBot to VPS
 
 on:
+  push:
+    branches: [main, master]
   workflow_dispatch:
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -13,28 +19,79 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 25m
           script: |
+            set -e
             mkdir -p /var/www/RecordingBot
             cd /var/www/RecordingBot
-            
+
             export GIT_SSH_COMMAND="ssh -i /root/.ssh/id_ed25519_recordingbot -o IdentitiesOnly=yes"
-            
-            if [ ! -d ".git" ]; then
-              git clone git@github.com:${{ github.repository }}.git .
-              git config core.sshCommand "ssh -i /root/.ssh/id_ed25519_recordingbot -o IdentitiesOnly=yes"
-            else
+
+            PREV_SHA=""
+            if [ -d ".git" ]; then
+              PREV_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
               git config core.sshCommand "ssh -i /root/.ssh/id_ed25519_recordingbot -o IdentitiesOnly=yes"
               git fetch origin main || git fetch origin master
               git reset --hard origin/main || git reset --hard origin/master
+            else
+              git clone git@github.com:${{ github.repository }}.git .
+              git config core.sshCommand "ssh -i /root/.ssh/id_ed25519_recordingbot -o IdentitiesOnly=yes"
             fi
+
+            NEW_SHA=$(git rev-parse HEAD)
 
             # Ensure .env exists if not provided
             if [ ! -f ".env" ] && [ -f ".env.example" ]; then
               cp .env.example .env
             fi
 
-            # Build and deploy with Docker Compose
-            docker compose build --parallel
-            docker compose up -d --remove-orphans
-            
+            # Determine changed files between previous commit and new commit
+            BEFORE_SHA="${{ github.event.before }}"
+            if [ -n "$PREV_SHA" ] && [ "$PREV_SHA" != "$NEW_SHA" ]; then
+              CHANGED_FILES=$(git diff --name-only "$PREV_SHA" "$NEW_SHA")
+            elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+              CHANGED_FILES=$(git diff --name-only "$BEFORE_SHA" "$NEW_SHA" 2>/dev/null || git diff --name-only HEAD~1 HEAD)
+            else
+              CHANGED_FILES="ALL"
+            fi
+
+            echo "📋 Changed files:"
+            echo "$CHANGED_FILES"
+
+            SERVICES=""
+            if [ "$CHANGED_FILES" = "ALL" ]; then
+              SERVICES="dashboard-api dashboard-frontend scheduler meeting-bot"
+            else
+              if echo "$CHANGED_FILES" | grep -q "^dashboard-api/"; then
+                SERVICES="$SERVICES dashboard-api"
+              fi
+              if echo "$CHANGED_FILES" | grep -q "^dashboard-frontend/"; then
+                SERVICES="$SERVICES dashboard-frontend"
+              fi
+              if echo "$CHANGED_FILES" | grep -q "^scheduler/"; then
+                SERVICES="$SERVICES scheduler"
+              fi
+              if echo "$CHANGED_FILES" | grep -q "^meeting-bot/Dockerfile\.chrome-cdp\|^meeting-bot/scripts/start-chrome-cdp\.sh"; then
+                SERVICES="$SERVICES chrome-cdp"
+              fi
+              if echo "$CHANGED_FILES" | grep -q "^meeting-bot/"; then
+                SERVICES="$SERVICES meeting-bot"
+              fi
+            fi
+
+            if [ -n "$SERVICES" ]; then
+              echo "🔨 Building and restarting modified services:$SERVICES"
+              for svc in $SERVICES; do
+                echo "➡️ Building $svc..."
+                docker compose build "$svc"
+                echo "🔄 Restarting $svc..."
+                docker compose up -d --no-deps "$svc"
+              done
+            elif echo "$CHANGED_FILES" | grep -q "^docker-compose\.yml"; then
+              echo "🔄 docker-compose.yml changed, applying configuration..."
+              docker compose up -d --remove-orphans
+            else
+              echo "⚡ No container source files changed. Skipping Docker rebuild!"
+            fi
+
             echo "✅ RecordingBot deployed successfully!"
