@@ -16,6 +16,91 @@ export class CaptionTask {
     this.formatter = new TranscriptFormatter(meetingTitle);
   }
 
+  private async ensureCaptionsEnabled(): Promise<void> {
+    try {
+      const result = await this.page.evaluate(() => {
+        // 1. Check if direct toggle button (jsname="RrG0hf") is already in DOM and visible
+        const rrgBtn = document.querySelector('button[jsname="RrG0hf"]') as HTMLElement | null;
+        if (rrgBtn && rrgBtn.getBoundingClientRect().width > 0) {
+          const label = (rrgBtn.getAttribute('aria-label') || '').toLowerCase();
+          const iconText = rrgBtn.querySelector('i')?.textContent?.trim() || '';
+          const isOff =
+            iconText === 'closed_caption_off' ||
+            label.includes('activar') ||
+            label.includes('turn on') ||
+            rrgBtn.getAttribute('aria-pressed') === 'false';
+          if (isOff) {
+            rrgBtn.click();
+            return 'clicked_rrg0hf_direct';
+          }
+          return 'already_active_rrg0hf';
+        }
+
+        // 2. Look for toolbar button ("Subtítulos y traducción" / "Activar subtítulos" / "Captions")
+        const buttons = Array.from(document.querySelectorAll('button'));
+        for (const btn of buttons) {
+          if (btn.getBoundingClientRect().width === 0) continue;
+          const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+          if (label.includes('desactivar subt') || label.includes('turn off caption')) {
+            return 'already_active_toolbar';
+          }
+          if (
+            label.includes('activar subt') ||
+            label.includes('turn on caption') ||
+            label.includes('subtítulos y traducción') ||
+            label.includes('captions and translation') ||
+            btn.querySelector('i')?.textContent?.trim() === 'translate_cc'
+          ) {
+            btn.click();
+            return btn.getAttribute('aria-haspopup') === 'dialog' ? 'opened_popup_menu' : 'clicked_toolbar_toggle';
+          }
+        }
+        return 'not_found';
+      });
+
+      this.logger.info(`[CaptionTask]: Initial caption toggle step result: ${result}`);
+
+      if (result === 'opened_popup_menu') {
+        await this.page.waitForTimeout(800);
+        const innerResult = await this.page.evaluate(() => {
+          const rrgBtn = document.querySelector('button[jsname="RrG0hf"]') as HTMLElement | null;
+          if (rrgBtn && rrgBtn.getBoundingClientRect().width > 0) {
+            const label = (rrgBtn.getAttribute('aria-label') || '').toLowerCase();
+            const iconText = rrgBtn.querySelector('i')?.textContent?.trim() || '';
+            const isOff =
+              iconText === 'closed_caption_off' ||
+              label.includes('activar') ||
+              label.includes('turn on') ||
+              rrgBtn.getAttribute('aria-pressed') === 'false';
+            if (isOff) {
+              rrgBtn.click();
+              return 'clicked_inner_rrg0hf';
+            }
+            return 'inner_already_active';
+          }
+          // Fallback: search any visible button inside the dialog with "Activar subtítulos" / "Turn on captions"
+          const btns = Array.from(document.querySelectorAll('[role="dialog"] button, button'));
+          for (const b of btns) {
+            if (b.getBoundingClientRect().width === 0) continue;
+            const lbl = (b.getAttribute('aria-label') || '').toLowerCase();
+            if (lbl.includes('activar subt') || lbl.includes('turn on caption')) {
+              (b as HTMLElement).click();
+              return 'clicked_inner_by_label';
+            }
+          }
+          return 'inner_not_found';
+        });
+        this.logger.info(`[CaptionTask]: Inner caption popup toggle result: ${innerResult}`);
+        await this.page.waitForTimeout(500);
+      } else if (result === 'not_found') {
+        await this.page.keyboard.press('c');
+        this.logger.info('[CaptionTask]: Pressed "c" key to enable closed captions');
+      }
+    } catch (err) {
+      this.logger.warn('[CaptionTask]: Could not enable captions', err);
+    }
+  }
+
   async start(): Promise<void> {
     this.page.on('console', msg => {
         if (msg.text().includes('MEET_DOM_DUMP: ')) {
@@ -55,24 +140,8 @@ export class CaptionTask {
     await this.page.mouse.move(500, 500).catch(() => {});
     await this.page.waitForTimeout(1000);
 
-    // 1. Try to turn on captions if not already on
-    try {
-      const ccButton = this.page.locator('button[jsname="RrG0hf"], button[aria-label*="caption" i], button[aria-label*="ubt" i]').first();
-      if (await ccButton.isVisible({ timeout: 2000 }).catch(() => false)) {
-        const isPressed = await ccButton.getAttribute('aria-pressed');
-        if (isPressed !== 'true') {
-          await ccButton.click({ timeout: 3000 });
-          this.logger.info('[CaptionTask]: Clicked Closed Captions toggle button');
-        } else {
-          this.logger.info('[CaptionTask]: Closed Captions already active');
-        }
-      } else {
-        await this.page.keyboard.press('c');
-        this.logger.info('[CaptionTask]: Pressed "c" key to enable closed captions');
-      }
-    } catch (err) {
-      this.logger.warn('[CaptionTask]: Could not enable captions', err);
-    }
+    // 1. Turn on captions (supports both direct button and new "Subtítulos y traducción" dialog)
+    await this.ensureCaptionsEnabled();
 
     // Try to set language to Spanish Mexico via the UI
     try {
@@ -96,16 +165,17 @@ export class CaptionTask {
              this.logger.warn('[CaptionTask]: Failed to dump DOM', e);
           }
 
-          const settingsOption = this.page.locator('li, [role="menuitem"]').filter({ hasText: /onfiguraci|ettings/i }).first();
+          const settingsOption = this.page.locator('li[role="menuitem"], [role="menuitem"]').filter({ hasText: /onfiguraci|ettings/i }).first();
           if (await settingsOption.count() > 0) {
               await settingsOption.click({ timeout: 5000, force: true });
               await this.page.waitForTimeout(1500);
 
-              // 1. Click "Subtítulos" tab safely
+              // 1. Click "Subtítulos" / "Subtítulos y traducción" tab safely
               const clickedTab = await this.page.evaluate(() => {
                   const els = Array.from(document.querySelectorAll('*'));
                   for (const el of els) {
-                      if (el.children.length === 0 && (el.textContent?.trim() === 'Subtítulos' || el.textContent?.trim() === 'Captions')) {
+                      const txt = el.textContent?.trim() || '';
+                      if (el.children.length === 0 && (txt === 'Subtítulos' || txt === 'Captions' || txt.startsWith('Subtítulos') || txt.startsWith('Captions'))) {
                           const clickable = el.closest('div[role="tab"], li, button, div.VfPpkd-V67aGc, div.Gk2izd');
                           if (clickable) {
                               (clickable as HTMLElement).click();
@@ -138,7 +208,7 @@ export class CaptionTask {
                       const clickedLang = await this.page.evaluate(() => {
                           const options = document.querySelectorAll('[role="option"]');
                           for (const opt of Array.from(options)) {
-                              if (opt.textContent && (opt.textContent.includes('México') || opt.textContent.includes('Mexico'))) {
+                              if (opt.textContent && (opt.textContent.includes('México') || opt.textContent.includes('Mexico') || opt.textContent.includes('Español'))) {
                                   (opt as HTMLElement).click();
                                   return true;
                               }
@@ -152,7 +222,7 @@ export class CaptionTask {
                   }
               }
               
-              // NEW: Explicitly close the Settings modal by finding the Close (X) button
+              // Explicitly close the Settings modal by finding the Close (X) button
               const closedModal = await this.page.evaluate(() => {
                   const closeButtons = Array.from(document.querySelectorAll('button[aria-label="Cerrar"], button[aria-label="Close"], button[data-mdc-dialog-action="close"]'));
                   for (const btn of closeButtons) {
@@ -168,7 +238,7 @@ export class CaptionTask {
                   this.logger.warn('[CaptionTask]: Could not find close button for settings modal, falling back to Escape');
                   await this.page.keyboard.press('Escape');
                   await this.page.waitForTimeout(500);
-                  await this.page.keyboard.press('Escape'); // Double escape just in case
+                  await this.page.keyboard.press('Escape');
               } else {
                   this.logger.info('[CaptionTask]: Closed settings modal successfully via button click');
               }
@@ -183,11 +253,21 @@ export class CaptionTask {
       this.logger.warn('[CaptionTask]: Could not set captions language via UI (might already be set)', err);
     }
 
+    // Re-verify captions are enabled after closing settings modal
+    await this.page.waitForTimeout(500);
+    await this.ensureCaptionsEnabled();
+
+    // Close any open translation popup dialog by clicking center of video area or Escape if dialog is open
+    await this.page.evaluate(() => {
+      const dialog = document.querySelector('div[role="dialog"][aria-label*="ubt" i], div[role="dialog"][aria-label*="aption" i]');
+      if (dialog && (dialog as HTMLElement).getBoundingClientRect().width > 0) {
+        document.body.click();
+      }
+    }).catch(() => {});
+
     // 2. Inject DOM MutationObserver into page
     await this.page.evaluate(({ secretId }) => {
       console.log('[CaptionTask Injected]: Starting MutationObserver on Google Meet captions...');
-
-      const processedElements = new WeakSet();
 
       function getLocalTime(): string {
         const now = new Date();
@@ -199,8 +279,8 @@ export class CaptionTask {
           return; // Skip captions while recording is paused
         }
 
-        // Target new Meet CC interface regions
-        const captionRegions = document.querySelectorAll('div[aria-label*="ubt"], div[aria-label*="aption"]');
+        // Target Meet CC interface regions (excluding the popup dialog itself)
+        const captionRegions = document.querySelectorAll('div[role="region"][aria-label*="ubt" i], div[role="region"][aria-label*="aption" i], div[aria-label*="ubt" i]:not([role="dialog"]), div[aria-label*="aption" i]:not([role="dialog"])');
 
         captionRegions.forEach(region => {
            // Google Meet updates blocks of text per speaker.

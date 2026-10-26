@@ -192,9 +192,16 @@ export class GoogleDriveStorageProvider implements StorageProvider {
     if (fs.existsSync(transcriptPath)) {
       try {
         const content = fs.readFileSync(transcriptPath, 'utf8').trim();
-        // Check if there is actual dialogue (more than 3 non-empty lines)
-        const lines = content.split('\n').filter(l => l.trim().length > 0);
-        if (lines.length >= 3) {
+        // Check if there is actual dialogue (excluding header lines and the empty-captions placeholder)
+        const lines = content.split('\n').filter(l => {
+          const t = l.trim();
+          return t.length > 0 &&
+                 !t.startsWith('===') &&
+                 !t.startsWith('TRANSCRIPCIÓN DE REUNIÓN:') &&
+                 !t.startsWith('FECHA:') &&
+                 !t.includes('(No se detectaron subtítulos');
+        });
+        if (lines.length >= 1) {
           hasValidTranscript = true;
         }
       } catch (err) {
