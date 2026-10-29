@@ -17,6 +17,8 @@ RUN apt-get update && \
     libdbus-1-3 \
     libdrm2 \
     libgbm1 \
+    libgl1-mesa-dri \
+    libglx-mesa0 \
     libgtk-3-0 \
     libnss3 \
     libu2f-udev \
@@ -31,7 +33,9 @@ RUN apt-get update && \
     libxshmfence1 \
     libxss1 \
     libxtst6 \
+    mesa-vulkan-drivers \
     nginx \
+    procps \
     pulseaudio \
     wget \
     xdg-utils \

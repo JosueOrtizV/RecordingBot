@@ -1020,16 +1020,17 @@ Comandos de chat disponibles:
         let inactivitySilenceDetectionTimeout: NodeJS.Timeout;
         let isOnValidGoogleMeetPageInterval: NodeJS.Timeout;
 
-        const sendChunkToServer = async (chunk: ArrayBuffer) => {
-          function arrayBufferToBase64(buffer: ArrayBuffer) {
-            let binary = '';
-            const bytes = new Uint8Array(buffer);
-            for (let i = 0; i < bytes.byteLength; i++) {
-              binary += String.fromCharCode(bytes[i]);
-            }
-            return btoa(binary);
-          }
-          const base64 = arrayBufferToBase64(chunk);
+        const sendChunkToServer = async (chunk: Blob) => {
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const result = String(reader.result || '');
+              const idx = result.indexOf('base64,');
+              resolve(idx >= 0 ? result.substring(idx + 7) : result);
+            };
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(chunk);
+          });
           await (window as any).screenAppSendData(slightlySecretId, base64);
         };
 
@@ -1057,7 +1058,7 @@ Comandos de chat disponibles:
                 displaySurface: 'browser',
                 width: { ideal: 1280, max: 1280 },
                 height: { ideal: 720, max: 720 },
-                frameRate: isAudioOnlyMode ? { ideal: 5, max: 10 } : { ideal: 20, max: 20 },
+                frameRate: isAudioOnlyMode ? { ideal: 1, max: 5 } : { ideal: 15, max: 15 },
               },
               audio: {
                 autoGainControl: false,
@@ -1077,6 +1078,11 @@ Comandos de chat disponibles:
               console.warn('No audio tracks available for silence detection. Will rely only on presence detection.');
             }
 
+            if (isAudioOnlyMode && hasAudioTracks) {
+              // Immediately stop unused video tracks so Chrome doesn't waste CPU capturing frames in audio mode
+              stream.getVideoTracks().forEach((track) => track.stop());
+            }
+
             const streamToRecord = isAudioOnlyMode && hasAudioTracks ? new MediaStream(audioTracks) : stream;
 
             const selectedMimeType = mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
@@ -1089,7 +1095,7 @@ Comandos de chat disponibles:
               mimeType: selectedMimeType,
               ...(isAudioOnlyMode
                 ? { audioBitsPerSecond: 128000 }
-                : { videoBitsPerSecond: 2500000, audioBitsPerSecond: 128000 }),
+                : { videoBitsPerSecond: 1200000, audioBitsPerSecond: 128000 }),
             };
             mediaRecorder = new MediaRecorder(streamToRecord, recorderOptions);
             console.log(`Media Recorder actual mime type: ${mediaRecorder.mimeType}`);
@@ -1103,8 +1109,7 @@ Comandos de chat disponibles:
               const chunk = event.data;
               chunkUploadChain = chunkUploadChain.then(async () => {
                 try {
-                  const arrayBuffer = await chunk.arrayBuffer();
-                  await sendChunkToServer(arrayBuffer);
+                  await sendChunkToServer(chunk);
                 } catch (error) {
                   console.error('Error uploading chunk:', error);
                 }

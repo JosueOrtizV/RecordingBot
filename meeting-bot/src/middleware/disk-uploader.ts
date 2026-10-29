@@ -574,18 +574,16 @@ class DiskUploader implements IUploader {
     try {
       await execFileAsync('ffmpeg', [
         '-y',
-        '-fflags', '+genpts+igndts',
         '-i', filePath,
         '-c:v', 'libx264',
         '-preset', 'superfast',
-        '-crf', '20',
+        '-crf', '22',
         '-pix_fmt', 'yuv420p',
-        '-r', '20',
+        '-r', '15',
         '-c:a', 'aac',
         '-b:a', '128k',
         '-ar', '48000',
         '-ac', '2',
-        '-af', 'aresample=async=1:first_pts=0',
         '-movflags', '+faststart',
         outputPath,
       ], { maxBuffer: 20 * 1024 * 1024 });

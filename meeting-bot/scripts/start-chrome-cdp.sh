@@ -12,14 +12,20 @@ export CHROME_URL="${CHROME_URL:-about:blank}"
 CHROME_WINDOW_SIZE_FOR_CHROME="${CHROME_WINDOW_SIZE/x/,}"
 XVFB_SCREEN_SIZE="${CHROME_WINDOW_SIZE/,/x}"
 
+rm -rf /tmp/.X*-lock /tmp/.X11-unix/X* /tmp/nginx.pid "$CHROME_USER_DATA_DIR"/Singleton* || true
 mkdir -p "$CHROME_USER_DATA_DIR" /tmp/.X11-unix
 
 if command -v pulseaudio >/dev/null 2>&1; then
-  pulseaudio --start --exit-idle-time=-1 || true
+  pulseaudio --kill >/dev/null 2>&1 || true
+  rm -rf /tmp/pulse-* /run/user/1001/pulse || true
+  pulseaudio -D --exit-idle-time=-1 || true
+  pactl load-module module-null-sink sink_name=virtual_output rate=48000 channels=2 sink_properties=device.description="Virtual_Output" >/dev/null 2>&1 || true
+  pactl set-default-sink virtual_output >/dev/null 2>&1 || true
 fi
 
 Xvfb "$DISPLAY" -screen 0 "${XVFB_SCREEN_SIZE}x24" -ac +extension RANDR >/tmp/xvfb.log 2>&1 &
 xvfb_pid="$!"
+sleep 1
 
 cat >/tmp/chrome-cdp-nginx.conf <<EOF
 pid /tmp/nginx.pid;
@@ -83,7 +89,6 @@ google-chrome-stable \
   --autoplay-policy=no-user-gesture-required \
   --no-first-run \
   --no-default-browser-check \
-  --disable-dev-shm-usage \
   --disable-background-timer-throttling \
   --disable-backgrounding-occluded-windows \
   --disable-renderer-backgrounding \

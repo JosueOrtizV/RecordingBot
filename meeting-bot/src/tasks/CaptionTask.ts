@@ -24,11 +24,17 @@ export class CaptionTask {
         if (rrgBtn && rrgBtn.getBoundingClientRect().width > 0) {
           const label = (rrgBtn.getAttribute('aria-label') || '').toLowerCase();
           const iconText = rrgBtn.querySelector('i')?.textContent?.trim() || '';
+          const isAlreadyOn =
+            label.includes('desactivar') ||
+            label.includes('turn off') ||
+            rrgBtn.getAttribute('aria-pressed') === 'true' ||
+            iconText === 'closed_caption';
           const isOff =
-            iconText === 'closed_caption_off' ||
-            label.includes('activar') ||
-            label.includes('turn on') ||
-            rrgBtn.getAttribute('aria-pressed') === 'false';
+            !isAlreadyOn &&
+            (iconText === 'closed_caption_off' ||
+              /\bactivar\b/.test(label) ||
+              label.includes('turn on') ||
+              rrgBtn.getAttribute('aria-pressed') === 'false');
           if (isOff) {
             rrgBtn.click();
             return 'clicked_rrg0hf_direct';
@@ -36,7 +42,13 @@ export class CaptionTask {
           return 'already_active_rrg0hf';
         }
 
-        // 2. Look for toolbar button ("Subtítulos y traducción" / "Activar subtítulos" / "Captions")
+        // 2. Check if live captions region is already visible and active
+        const activeRegion = document.querySelector('div[role="region"][aria-label*="ubt" i], div[role="region"][aria-label*="aption" i]') as HTMLElement | null;
+        if (activeRegion && activeRegion.getBoundingClientRect().height > 0) {
+          return 'already_active_region';
+        }
+
+        // 3. Look for toolbar button ("Subtítulos y traducción" / "Activar subtítulos" / "Captions")
         const buttons = Array.from(document.querySelectorAll('button'));
         for (const btn of buttons) {
           if (btn.getBoundingClientRect().width === 0) continue;
@@ -45,7 +57,7 @@ export class CaptionTask {
             return 'already_active_toolbar';
           }
           if (
-            label.includes('activar subt') ||
+            (!label.includes('desactivar') && label.includes('activar subt')) ||
             label.includes('turn on caption') ||
             label.includes('subtítulos y traducción') ||
             label.includes('captions and translation') ||
@@ -67,11 +79,17 @@ export class CaptionTask {
           if (rrgBtn && rrgBtn.getBoundingClientRect().width > 0) {
             const label = (rrgBtn.getAttribute('aria-label') || '').toLowerCase();
             const iconText = rrgBtn.querySelector('i')?.textContent?.trim() || '';
+            const isAlreadyOn =
+              label.includes('desactivar') ||
+              label.includes('turn off') ||
+              rrgBtn.getAttribute('aria-pressed') === 'true' ||
+              iconText === 'closed_caption';
             const isOff =
-              iconText === 'closed_caption_off' ||
-              label.includes('activar') ||
-              label.includes('turn on') ||
-              rrgBtn.getAttribute('aria-pressed') === 'false';
+              !isAlreadyOn &&
+              (iconText === 'closed_caption_off' ||
+                /\bactivar\b/.test(label) ||
+                label.includes('turn on') ||
+                rrgBtn.getAttribute('aria-pressed') === 'false');
             if (isOff) {
               rrgBtn.click();
               return 'clicked_inner_rrg0hf';
@@ -83,7 +101,10 @@ export class CaptionTask {
           for (const b of btns) {
             if (b.getBoundingClientRect().width === 0) continue;
             const lbl = (b.getAttribute('aria-label') || '').toLowerCase();
-            if (lbl.includes('activar subt') || lbl.includes('turn on caption')) {
+            if (lbl.includes('desactivar subt') || lbl.includes('turn off caption')) {
+              return 'inner_already_active_by_label';
+            }
+            if ((!lbl.includes('desactivar') && lbl.includes('activar subt')) || lbl.includes('turn on caption')) {
               (b as HTMLElement).click();
               return 'clicked_inner_by_label';
             }
@@ -143,27 +164,55 @@ export class CaptionTask {
     // 1. Turn on captions (supports both direct button and new "Subtítulos y traducción" dialog)
     await this.ensureCaptionsEnabled();
 
-    // Try to set language to Spanish Mexico via the UI
+    // Try to set language to Spanish Mexico via the UI (first checking if combobox is already in the open popup dialog)
     try {
       this.logger.info('[CaptionTask]: Attempting to set language to Spanish (Mexico)...');
-      await this.page.waitForTimeout(1500);
-      
-      // Click the main control bar's More Options, ignoring the bot's own video tile options
-      const configButton = this.page.locator('button[aria-label="Más opciones" i], button[aria-label="More options" i], button[jsname="NakZHc"]').first();
-      if (await configButton.count() > 0) {
+      await this.page.waitForTimeout(800);
+
+      // Check if language combobox is already visible inside the "Subtítulos y traducción" popup dialog
+      const popupComboState = await this.page.evaluate(() => {
+        const combos = Array.from(document.querySelectorAll('div[role="combobox"]'));
+        for (const combo of combos) {
+          if (combo.getBoundingClientRect().width > 0) {
+            const text = (combo.textContent || '').trim();
+            if (text.includes('Español') || text.includes('México') || text.includes('Mexico')) {
+              return 'already_spanish_in_popup';
+            }
+            (combo as HTMLElement).click();
+            return 'clicked_combo_in_popup';
+          }
+        }
+        return 'no_combo_in_popup';
+      });
+
+      if (popupComboState === 'already_spanish_in_popup') {
+        this.logger.info('[CaptionTask]: Language is already set to Spanish in popup dialog.');
+      } else if (popupComboState === 'clicked_combo_in_popup') {
+        await this.page.waitForTimeout(1000);
+        const clickedLang = await this.page.evaluate(() => {
+          const options = document.querySelectorAll('[role="option"]');
+          for (const opt of Array.from(options)) {
+            if (opt.textContent && (opt.textContent.includes('México') || opt.textContent.includes('Mexico') || opt.textContent.includes('Español'))) {
+              (opt as HTMLElement).click();
+              return true;
+            }
+          }
+          return false;
+        });
+        if (clickedLang) {
+          this.logger.info('[CaptionTask]: Successfully set language via popup dialog.');
+        }
+        await this.page.waitForTimeout(500);
+      } else {
+        // Close any open popup dialog before clicking More Options
+        await this.page.keyboard.press('Escape').catch(() => {});
+        await this.page.waitForTimeout(500);
+
+        // Click the main control bar's More Options, ignoring the bot's own video tile options
+        const configButton = this.page.locator('button[aria-label="Más opciones" i], button[aria-label="More options" i], button[jsname="NakZHc"]').first();
+        if (await configButton.count() > 0) {
           await configButton.click({ timeout: 5000, force: true });
           await this.page.waitForTimeout(1500); // Wait for menu to fully open
-
-          // DUMP DOM FOR DEBUGGING
-          try {
-             const buttonsHtml = await this.page.evaluate(() => {
-                return document.body.innerHTML;
-             });
-             require('fs').writeFileSync('/usr/src/app/dist/_tempvideo/menu_dump.html', buttonsHtml);
-             this.logger.info('[CaptionTask]: Successfully dumped menu DOM to /usr/src/app/dist/_tempvideo/menu_dump.html');
-          } catch (e) {
-             this.logger.warn('[CaptionTask]: Failed to dump DOM', e);
-          }
 
           const settingsOption = this.page.locator('li[role="menuitem"], [role="menuitem"]').filter({ hasText: /onfiguraci|ettings/i }).first();
           if (await settingsOption.count() > 0) {
@@ -217,7 +266,7 @@ export class CaptionTask {
                       });
 
                       if (clickedLang) {
-                          console.log('[CaptionTask]: Successfully set language');
+                          this.logger.info('[CaptionTask]: Successfully set language via Settings');
                       }
                   }
               }
@@ -246,14 +295,15 @@ export class CaptionTask {
           } else {
               this.logger.warn('[CaptionTask]: settingsOption not found');
           }
-      } else {
+        } else {
           this.logger.warn('[CaptionTask]: configButton not found');
+        }
       }
     } catch (err) {
       this.logger.warn('[CaptionTask]: Could not set captions language via UI (might already be set)', err);
     }
 
-    // Re-verify captions are enabled after closing settings modal
+    // Re-verify captions are enabled after language check
     await this.page.waitForTimeout(500);
     await this.ensureCaptionsEnabled();
 
