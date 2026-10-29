@@ -195,7 +195,7 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
       if (!line) continue;
 
       // Skip header divider lines like "========" or "TRANSCRIPCIÓN:"
-      if (line.startsWith('===') || line.startsWith('---') || line.startsWith('TRANSCRIPCIÓN') || line.startsWith('FECHA:')) {
+      if (line.startsWith('===') || line.startsWith('---') || line.toUpperCase().startsWith('TRANSCRIPCI') || line.startsWith('FECHA:')) {
         continue;
       }
 

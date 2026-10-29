@@ -69,7 +69,8 @@ export default {
   // Max concurrent meetings handled by this worker process
   maxConcurrentJobs: process.env.MAX_CONCURRENT_JOBS ?
     Number(process.env.MAX_CONCURRENT_JOBS) :
-    4,
+    2,
+  pulseServer: process.env.PULSE_SERVER || 'tcp:chrome-cdp:4713',
   chromeExecutablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', // We use Google Chrome with Playwright for recording
   googleChromeCdpUrl: process.env.GOOGLE_CHROME_CDP_URL,
   googleChromeUserDataDir: process.env.GOOGLE_CHROME_USER_DATA_DIR,

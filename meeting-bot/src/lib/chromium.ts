@@ -124,7 +124,7 @@ async function launchPersistentContextWithTimeout(launchFn: () => Promise<Browse
   });
 }
 
-async function createBrowserContext(url: string, correlationId: string, botType: BotType = 'google'): Promise<Page> {
+async function createBrowserContext(url: string, correlationId: string, botType: BotType = 'google', customCdpUrl?: string): Promise<Page> {
   const size = { width: 1280, height: 720 };
   const browserWindowSize = { width: size.width, height: size.height + 80 };
 
@@ -209,13 +209,14 @@ async function createBrowserContext(url: string, correlationId: string, botType:
     }),
   };
 
-  if (botType === 'google' && config.googleChromeCdpUrl) {
+  const effectiveCdpUrl = customCdpUrl || config.googleChromeCdpUrl;
+  if (botType === 'google' && effectiveCdpUrl) {
     console.log(`${getCorrelationIdLog(correlationId)} Connecting Google bot to external Chrome`, {
-      cdpUrl: config.googleChromeCdpUrl,
+      cdpUrl: effectiveCdpUrl,
     });
 
     const browser = await launchBrowserWithTimeout(
-      async () => await chromium.connectOverCDP(config.googleChromeCdpUrl!),
+      async () => await chromium.connectOverCDP(effectiveCdpUrl!),
       60000,
       correlationId
     );

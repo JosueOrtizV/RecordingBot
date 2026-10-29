@@ -18,6 +18,8 @@ import { getGoogleMeetDisplayName } from '../util/googleMeetDisplayName';
 import { CaptionTask } from '../tasks/CaptionTask';
 import { activeBotRegistry } from '../lib/activeBots';
 import { notifyRecordingStarted, notifyRecordingStatusChange } from '../services/notificationService';
+import { chromeSlotManager, ChromeSlot } from '../lib/chromeSlotManager';
+import { PulseAudioRecorder } from '../lib/pulseAudioRecorder';
 
 export class GoogleMeetBot extends MeetBotBase {
   private _logger: Logger;
@@ -27,6 +29,10 @@ export class GoogleMeetBot extends MeetBotBase {
   private currentBotId?: string;
   private currentEventId?: string;
   private waitingPromise: WaitPromise | null = null;
+  private currentSlot?: ChromeSlot;
+  private pulseAudioRecorder?: PulseAudioRecorder;
+  private audioStartedAt?: number;
+  private videoStartedAt?: number;
 
   constructor(logger: Logger, correlationId: string) {
     super();
@@ -51,6 +57,14 @@ export class GoogleMeetBot extends MeetBotBase {
       }
     } catch (err) {
       this._logger.warn('Could not trigger in-page __stopRecording', err);
+    }
+
+    try {
+      if (this.pulseAudioRecorder) {
+        await this.pulseAudioRecorder.stop().catch(() => {});
+      }
+    } catch (err) {
+      this._logger.warn('Could not stop PulseAudio recorder during stop', err);
     }
 
     if (this.waitingPromise) {
@@ -86,6 +100,14 @@ export class GoogleMeetBot extends MeetBotBase {
     } catch (err) {
       this._logger.warn('Could not trigger in-page __pauseRecording', err);
     }
+
+    try {
+      if (this.pulseAudioRecorder) {
+        await this.pulseAudioRecorder.pause().catch(() => {});
+      }
+    } catch (err) {
+      this._logger.warn('Could not pause PulseAudio recorder', err);
+    }
     this.isPaused = true;
     return {
       success: true,
@@ -106,6 +128,14 @@ export class GoogleMeetBot extends MeetBotBase {
       }
     } catch (err) {
       this._logger.warn('Could not trigger in-page __resumeRecording', err);
+    }
+
+    try {
+      if (this.pulseAudioRecorder) {
+        await this.pulseAudioRecorder.resume().catch(() => {});
+      }
+    } catch (err) {
+      this._logger.warn('Could not resume PulseAudio recorder', err);
     }
     this.isPaused = false;
     return {
@@ -141,6 +171,13 @@ export class GoogleMeetBot extends MeetBotBase {
     }
 
     try {
+      this.currentSlot = await chromeSlotManager.acquireSlot();
+      this._logger.info('[GoogleMeetBot]: Acquired Chrome CDP slot for meeting', {
+        slotIndex: this.currentSlot.slotIndex,
+        cdpUrl: this.currentSlot.cdpUrl,
+        pulseSink: this.currentSlot.pulseSink,
+      });
+
       const pushState = (st: BotStatus) => _state.push(st);
       await this.joinMeeting({ url, name, bearerToken, teamId, timezone, userId, eventId, botId, uploader, pushState, recordingMode, meetingTitle });
 
@@ -175,6 +212,14 @@ export class GoogleMeetBot extends MeetBotBase {
 
       throw error;
     } finally {
+      if (this.currentSlot) {
+        chromeSlotManager.releaseSlot(this.currentSlot);
+        this._logger.info('[GoogleMeetBot]: Released Chrome CDP slot', {
+          slotIndex: this.currentSlot.slotIndex,
+        });
+        this.currentSlot = undefined;
+      }
+
       if (botId) {
         activeBotRegistry.unregister(botId);
       }
@@ -202,7 +247,7 @@ export class GoogleMeetBot extends MeetBotBase {
   private async joinMeeting({ url, name, teamId, userId, eventId, botId, pushState, uploader, recordingMode, meetingTitle }: JoinParams & { pushState(state: BotStatus): void }): Promise<void> {
     this._logger.info('Launching browser...');
 
-    this.page = await createBrowserContext(url, this._correlationId, 'google');
+    this.page = await createBrowserContext(url, this._correlationId, 'google', this.currentSlot?.cdpUrl);
 
     // Force Spanish Mexico UI language so captions default to Spanish Mexico
     const meetUrl = new URL(url);
@@ -917,6 +962,29 @@ Comandos de chat disponibles:
     const inactivityLimit = config.inactivityLimit * 60 * 1000;
     const loneParticipantExitDelayMs = config.loneParticipantExitDelaySeconds * 1000;
     const isAudioOnly = recordingMode === 'audio';
+    const isTranscriptOnly = recordingMode === 'transcript_only';
+
+    // Start native PulseAudio external audio recorder for continuous high-fidelity audio
+    if (!isTranscriptOnly) {
+      const audioBasePath = uploader.getAudioTempFilePath ? uploader.getAudioTempFilePath() : `/tmp/${botId || eventId || userId}`;
+      const pulseServer = this.currentSlot?.pulseServer || config.pulseServer || 'tcp:chrome-cdp:4713';
+      const pulseSink = this.currentSlot?.pulseSink || 'sink_0';
+
+      this._logger.info('[GoogleMeetBot]: Initializing PulseAudio external recorder...', {
+        pulseServer,
+        pulseSink,
+        audioBasePath,
+      });
+
+      this.pulseAudioRecorder = new PulseAudioRecorder(pulseServer, pulseSink, audioBasePath, this._logger);
+      try {
+        await this.pulseAudioRecorder.start();
+        this.audioStartedAt = Date.now();
+        this._logger.info('[GoogleMeetBot]: PulseAudio external recorder started successfully.');
+      } catch (pulseErr) {
+        this._logger.error('[GoogleMeetBot]: Failed to start PulseAudio external recorder:', pulseErr);
+      }
+    }
 
     const processingTime = 0.2 * 60 * 1000;
     const waitingPromise: WaitPromise = getWaitingPromise(processingTime + duration);
@@ -962,13 +1030,18 @@ Comandos de chat disponibles:
     await this.page.exposeFunction('screenAppMeetStarted', (slightlySecretId: string, timestampMs: number) => {
       if (slightlySecretId !== this.slightlySecretId) return;
       try {
-        if (typeof timestampMs === 'number' && timestampMs > 0) {
-          const startedAt = new Date(timestampMs);
-          if (uploader.setRecordingStartedAt) {
-            uploader.setRecordingStartedAt(startedAt);
-          }
-          this._logger.info(`[GoogleMeetBot]: Media recording officially started at ${startedAt.toISOString()}`);
+        this.videoStartedAt = Date.now();
+        const startedAt = typeof timestampMs === 'number' && timestampMs > 0 ? new Date(timestampMs) : new Date(this.videoStartedAt);
+        if (uploader.setRecordingStartedAt) {
+          uploader.setRecordingStartedAt(startedAt);
         }
+        if (this.audioStartedAt && uploader.setAudioRecording) {
+          const offsetSec = Math.max(0, (this.videoStartedAt - this.audioStartedAt) / 1000);
+          const audioBasePath = uploader.getAudioTempFilePath ? uploader.getAudioTempFilePath() : `/tmp/${botId || eventId || userId}`;
+          uploader.setAudioRecording(`${audioBasePath}.aac`, offsetSec);
+          this._logger.info(`[GoogleMeetBot]: Audio offset aligned with video start: ${offsetSec.toFixed(3)}s`);
+        }
+        this._logger.info(`[GoogleMeetBot]: Media recording officially started at ${startedAt.toISOString()}`);
       } catch (error) {
         console.error('Could not process meeting start event', error);
       }
@@ -1046,58 +1119,38 @@ Comandos de chat disponibles:
           let mediaRecorder: MediaRecorder | null = null;
           let hasAudioTracks = false;
 
-          if (!isTranscriptOnlyMode) {
+          if (!isTranscriptOnlyMode && !isAudioOnlyMode) {
             // Check for the availability of the mediaDevices API
             if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
               console.error('MediaDevices or getDisplayMedia not supported in this browser.');
               return;
             }
             
+            // Capture video-only from the tab; audio is captured with 100% fidelity natively via PulseAudio!
             stream = await (navigator.mediaDevices as any).getDisplayMedia({
               video: {
                 displaySurface: 'browser',
                 width: { ideal: 1280, max: 1280 },
                 height: { ideal: 720, max: 720 },
-                frameRate: isAudioOnlyMode ? { ideal: 1, max: 5 } : { ideal: 15, max: 15 },
+                frameRate: { ideal: 15, max: 15 },
               },
-              audio: {
-                autoGainControl: false,
-                channels: 2,
-                channelCount: 2,
-                echoCancellation: false,
-                noiseSuppression: false,
-              },
+              audio: false,
               preferCurrentTab: true,
             });
 
-            // Check if we actually got audio tracks
-            const audioTracks = stream.getAudioTracks();
-            hasAudioTracks = audioTracks.length > 0;
-            
-            if (!hasAudioTracks) {
-              console.warn('No audio tracks available for silence detection. Will rely only on presence detection.');
-            }
-
-            if (isAudioOnlyMode && hasAudioTracks) {
-              // Immediately stop unused video tracks so Chrome doesn't waste CPU capturing frames in audio mode
-              stream.getVideoTracks().forEach((track) => track.stop());
-            }
-
-            const streamToRecord = isAudioOnlyMode && hasAudioTracks ? new MediaStream(audioTracks) : stream;
+            hasAudioTracks = false;
 
             const selectedMimeType = mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
             if (!selectedMimeType) {
               throw new Error(`MediaRecorder does not support requested codecs: ${mimeTypes.join(', ')}`);
             }
 
-            console.log(`Media Recorder will use ${selectedMimeType} codecs (Mode: ${recordingMode})...`);
+            console.log(`Media Recorder will use ${selectedMimeType} video codecs (Mode: ${recordingMode})...`);
             const recorderOptions: any = {
               mimeType: selectedMimeType,
-              ...(isAudioOnlyMode
-                ? { audioBitsPerSecond: 128000 }
-                : { videoBitsPerSecond: 1200000, audioBitsPerSecond: 128000 }),
+              videoBitsPerSecond: 1200000,
             };
-            mediaRecorder = new MediaRecorder(streamToRecord, recorderOptions);
+            mediaRecorder = new MediaRecorder(stream, recorderOptions);
             console.log(`Media Recorder actual mime type: ${mediaRecorder.mimeType}`);
 
             mediaRecorder.ondataavailable = (event: BlobEvent) => {
@@ -1119,6 +1172,8 @@ Comandos de chat disponibles:
             // Start recording with 2-second intervals
             const chunkDuration = 2000;
             mediaRecorder.start(chunkDuration);
+          } else if (isAudioOnlyMode) {
+            console.log('[MeetBot]: Audio-only mode active: tab capture skipped. Audio captured directly via PulseAudio.');
           } else {
             console.log('[MeetBot]: Transcript-only mode: MediaRecorder not started.');
           }
@@ -1770,6 +1825,24 @@ Comandos de chat disponibles:
     this._logger.info('Waiting for recording duration', config.maxRecordingDuration, 'minutes...');
 
     waitingPromise.promise.then(async () => {
+      if (this.pulseAudioRecorder) {
+        try {
+          const finalAudioPath = await this.pulseAudioRecorder.stop();
+          if (finalAudioPath && uploader.setAudioRecording) {
+            const offsetSec = (this.videoStartedAt && this.audioStartedAt)
+              ? Math.max(0, (this.videoStartedAt - this.audioStartedAt) / 1000)
+              : 0;
+            uploader.setAudioRecording(finalAudioPath, offsetSec);
+            this._logger.info('[GoogleMeetBot]: Finalized PulseAudio audio recording for upload', {
+              finalAudioPath,
+              offsetSec,
+            });
+          }
+        } catch (stopErr) {
+          this._logger.warn('[GoogleMeetBot]: Error stopping PulseAudio recorder:', stopErr);
+        }
+      }
+
       // Save transcript before tearing down browser context unless cancelled without save
       if (!this.isCancelledWithoutSave) {
         try {

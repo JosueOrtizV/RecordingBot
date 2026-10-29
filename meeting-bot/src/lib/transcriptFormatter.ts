@@ -82,8 +82,20 @@ export class TranscriptFormatter {
     let currentSpeakerLines: string[] = [];
     let currentTimestamp = '';
 
+    // Ensure non-decreasing timestamps across captions
+    let maxTime = '';
+    const sortedEntries = this.entries.map(e => {
+      let ts = e.timestamp;
+      if (maxTime && ts < maxTime) {
+        ts = maxTime;
+      } else {
+        maxTime = ts;
+      }
+      return { ...e, timestamp: ts };
+    });
+
     // Advanced formatting: Group by speaker sequentially
-    for (const entry of this.entries) {
+    for (const entry of sortedEntries) {
       if (entry.speaker !== currentSpeaker) {
         if (currentSpeakerLines.length > 0) {
           lines.push(`[${currentTimestamp}] ${currentSpeaker}: ${currentSpeakerLines.join(' ')}`);

@@ -52,6 +52,8 @@ export interface IUploader {
   saveTranscript(content: string): Promise<void>;
   setRecordingDuration(durationSeconds: number): void;
   setRecordingStartedAt?(startedAt: Date): void;
+  setAudioRecording?(audioFilePath: string, offsetSeconds: number): void;
+  getAudioTempFilePath?(): string;
   discard(): Promise<void>;
   readonly dedupGroupId?: string;
 }
@@ -386,6 +388,23 @@ class DiskUploader implements IUploader {
     });
   }
 
+  private audioFilePath?: string;
+  private audioOffsetSeconds: number = 0;
+
+  public setAudioRecording(audioFilePath: string, offsetSeconds: number): void {
+    this.audioFilePath = audioFilePath;
+    this.audioOffsetSeconds = Math.max(0, offsetSeconds);
+    this._logger.info('[DiskUploader]: Associated external audio recording:', {
+      audioFilePath,
+      offsetSeconds: this.audioOffsetSeconds,
+    });
+  }
+
+  public getAudioTempFilePath(): string {
+    const folderPath = DiskUploader.getFolderPath(this._userId);
+    return path.join(folderPath, `${this._tempFileId}.audio`);
+  }
+
   private static getFolderPath(userId: string) {
     const folderPath = path.join(tempFolder, userId);
     return folderPath;
@@ -501,6 +520,10 @@ class DiskUploader implements IUploader {
         this._logger.info(`Temp File deleted from disk: ${absPath}`, this._userId);
       }
 
+      if (this.audioFilePath && fs.existsSync(this.audioFilePath)) {
+        await fs.promises.unlink(this.audioFilePath).catch(() => {});
+      }
+
       // Also clean up transcript file if exists
       const folderPath = DiskUploader.getFolderPath(this._userId);
       const transcriptPath = path.join(folderPath, `${this._tempFileId}.txt`);
@@ -565,31 +588,87 @@ class DiskUploader implements IUploader {
     if (this.fileExtension !== '.mp4') return;
     if (!fs.existsSync(filePath)) return;
 
+    const hasExternalAudio = Boolean(this.audioFilePath && fs.existsSync(this.audioFilePath) && fs.statSync(this.audioFilePath).size > 0);
     const outputPath = `${filePath}.transcoded.mp4`;
     this._logger.info('Post-processing video recording to standard MP4 container (H.264 + AAC + faststart)...', {
       inputPath: filePath,
       outputPath,
+      hasExternalAudio,
+      audioFilePath: this.audioFilePath,
+      audioOffsetSeconds: this.audioOffsetSeconds,
     });
 
     try {
-      await execFileAsync('ffmpeg', [
-        '-y',
-        '-i', filePath,
-        '-c:v', 'libx264',
-        '-preset', 'superfast',
-        '-crf', '22',
-        '-pix_fmt', 'yuv420p',
-        '-r', '15',
-        '-c:a', 'aac',
-        '-b:a', '128k',
-        '-ar', '48000',
-        '-ac', '2',
-        '-movflags', '+faststart',
-        outputPath,
-      ], { maxBuffer: 20 * 1024 * 1024 });
+      const ffmpegArgs: string[] = ['-y'];
+
+      // Video input (Input 0)
+      ffmpegArgs.push('-i', filePath);
+
+      if (hasExternalAudio) {
+        // Audio input (Input 1) from PulseAudio
+        if (this.audioOffsetSeconds > 0.05) {
+          ffmpegArgs.push('-ss', this.audioOffsetSeconds.toFixed(3));
+        }
+        ffmpegArgs.push('-i', this.audioFilePath!);
+
+        ffmpegArgs.push(
+          '-map', '0:v:0',
+          '-map', '1:a:0',
+          '-c:v', 'libx264',
+          '-preset', 'superfast',
+          '-crf', '22',
+          '-pix_fmt', 'yuv420p',
+          '-r', '15',
+          '-c:a', 'copy',
+          '-shortest',
+          '-movflags', '+faststart',
+          outputPath
+        );
+      } else {
+        ffmpegArgs.push(
+          '-c:v', 'libx264',
+          '-preset', 'superfast',
+          '-crf', '22',
+          '-pix_fmt', 'yuv420p',
+          '-r', '15',
+          '-c:a', 'aac',
+          '-b:a', '128k',
+          '-ar', '48000',
+          '-ac', '2',
+          '-movflags', '+faststart',
+          outputPath
+        );
+      }
+
+      await execFileAsync('ffmpeg', ffmpegArgs, { maxBuffer: 20 * 1024 * 1024 });
 
       await fs.promises.rename(outputPath, filePath);
       this._logger.info('Successfully transcoded recording temp file to standard MP4 container before upload.', { filePath });
+
+      if (hasExternalAudio && this.audioFilePath) {
+        await fs.promises.unlink(this.audioFilePath).catch(() => {});
+      }
+
+      // Quality control audit
+      try {
+        const { stdout: probeOut } = await execFileAsync('ffprobe', [
+          '-v', 'error',
+          '-show_entries', 'format=duration:stream=codec_type,duration',
+          '-of', 'json',
+          filePath,
+        ], { maxBuffer: 1024 * 1024 });
+        const probeData = JSON.parse(probeOut);
+        const formatDuration = parseFloat(probeData.format?.duration || '0');
+        const audioStream = probeData.streams?.find((s: any) => s.codec_type === 'audio');
+        const audioDuration = parseFloat(audioStream?.duration || formatDuration.toString());
+        const ratio = formatDuration > 0 ? (audioDuration / formatDuration) * 100 : 100;
+        this._logger.info(`[QualityControl]: Recording duration: ${formatDuration.toFixed(2)}s, Audio duration: ${audioDuration.toFixed(2)}s, Audio continuity: ${ratio.toFixed(1)}%`);
+        if (ratio < 98) {
+          this._logger.warn(`[QualityControl]: Audio continuity warning: only ${ratio.toFixed(1)}% of duration contains audio packets!`);
+        }
+      } catch (qcErr) {
+        this._logger.warn('[QualityControl]: Could not run QC probe:', qcErr);
+      }
     } catch (err) {
       try {
         await fs.promises.unlink(outputPath);
@@ -651,7 +730,9 @@ class DiskUploader implements IUploader {
       }
 
       if (this._recordingMode === 'audio') {
-        const inputPath = DiskUploader.getFilePath(this._userId, this._tempFileId, '.webm');
+        const inputPath = (this.audioFilePath && fs.existsSync(this.audioFilePath) && fs.statSync(this.audioFilePath).size > 0)
+          ? this.audioFilePath
+          : DiskUploader.getFilePath(this._userId, this._tempFileId, '.webm');
         const outputPath = DiskUploader.getFilePath(this._userId, this._tempFileId, '.mp3');
         if (fs.existsSync(inputPath)) {
           this._logger.info('Converting audio recording to MP3 format...', { inputPath, outputPath });

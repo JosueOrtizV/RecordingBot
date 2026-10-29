@@ -23,11 +23,11 @@ export const getRecordingMimeTypesForExtension = (_extension: string, isAudioOnl
     };
   }
 
-  // Always prefer WebM (VP8 + Opus) during live browser MediaRecorder capture:
-  // 1. VP8 software encoding in headless Xvfb uses ~3x less CPU than H.264/VP9, preventing audio packet drops.
+  // Always prefer WebM VP8 during live browser MediaRecorder capture:
+  // 1. VP8 software encoding in headless Xvfb uses minimal CPU when capturing video-only.
   // 2. WebM handles dynamic Google Meet resolution changes without breaking stream headers.
-  // 3. DiskUploader transcodes the captured WebM into standard MP4 (H.264 + AAC + faststart) after the call.
-  const webmCaptureMimeTypes = [vp8WebmMimeType, webmMimeType, vp9MimeType, 'video/webm'];
+  // 3. DiskUploader muxes the video with pristine PulseAudio audio into standard MP4 after the call.
+  const webmCaptureMimeTypes = ['video/webm;codecs=vp8', vp8WebmMimeType, webmMimeType, 'video/webm'];
 
   return {
     mimeTypes: webmCaptureMimeTypes,
