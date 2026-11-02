@@ -27,14 +27,20 @@ jobs:
 
             export GIT_SSH_COMMAND="ssh -i /root/.ssh/id_ed25519_recordingbot -o IdentitiesOnly=yes"
 
+            TARGET_BRANCH="${{ github.ref_name }}"
+            if [ -z "$TARGET_BRANCH" ]; then
+              TARGET_BRANCH="master"
+            fi
+
             PREV_SHA=""
             if [ -d ".git" ]; then
               PREV_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
               git config core.sshCommand "ssh -i /root/.ssh/id_ed25519_recordingbot -o IdentitiesOnly=yes"
-              git fetch origin main || git fetch origin master
-              git reset --hard origin/main || git reset --hard origin/master
+              git fetch origin "$TARGET_BRANCH"
+              git checkout -B "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
+              git reset --hard "origin/$TARGET_BRANCH"
             else
-              git clone git@github.com:${{ github.repository }}.git .
+              git clone -b "$TARGET_BRANCH" git@github.com:${{ github.repository }}.git .
               git config core.sshCommand "ssh -i /root/.ssh/id_ed25519_recordingbot -o IdentitiesOnly=yes"
             fi
 
