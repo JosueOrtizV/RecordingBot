@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { query } from '../db.js';
-import { setDriveFilePublic, setDriveFilePrivate, getUserOAuth2Client } from '../services/googleAuth.js';
+import { setDriveFilePublic, setDriveFilePrivate, deleteDriveFile, getUserOAuth2Client } from '../services/googleAuth.js';
 import { generateMeetingMinutes } from '../services/gemini.js';
 import { google } from 'googleapis';
 import jwt from 'jsonwebtoken';
@@ -646,18 +646,51 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.id;
     const id = req.params.id;
+    const deleteFromDrive = req.query.deleteFromDrive === 'true' || req.body?.deleteFromDrive === true;
 
-    const delRes = await query(
-      'DELETE FROM recordings WHERE id = $1 AND user_id = $2 RETURNING id',
+    // 1. Fetch recording details to check ownership, dedup, and drive_file_id
+    const recRes = await query(
+      'SELECT id, user_id, owner_user_id, dedup_group_id, drive_file_id FROM recordings WHERE id = $1 AND user_id = $2',
       [id, userId]
     );
 
-    if (delRes.rows.length === 0) {
+    if (recRes.rows.length === 0) {
       res.status(404).json({ error: 'Grabación no encontrada' });
       return;
     }
 
-    res.json({ success: true, id });
+    const recording = recRes.rows[0];
+    let driveFileDeleted = false;
+
+    // 2. If user requested to delete from Google Drive and a drive file exists:
+    if (deleteFromDrive && recording.drive_file_id) {
+      // Check if any other user's recording shares this same drive_file_id
+      const sharedCheck = await query(
+        'SELECT COUNT(*) as count FROM recordings WHERE drive_file_id = $1 AND id != $2',
+        [recording.drive_file_id, id]
+      );
+      const otherSharesCount = parseInt(sharedCheck.rows[0]?.count || '0', 10);
+
+      // If no other recordings share this Drive file, move it to the user's Drive trash
+      if (otherSharesCount === 0) {
+        const driveOwnerId = recording.owner_user_id || userId;
+        driveFileDeleted = await deleteDriveFile(driveOwnerId, recording.drive_file_id, false);
+      } else {
+        console.log(`Skipping Drive file deletion for ${recording.drive_file_id} because ${otherSharesCount} other recording(s) share it.`);
+      }
+    }
+
+    // 3. Delete recording from database
+    await query(
+      'DELETE FROM recordings WHERE id = $1 AND user_id = $2',
+      [id, userId]
+    );
+
+    res.json({
+      success: true,
+      id,
+      deletedFromDrive: driveFileDeleted,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../api/client';
 import { Recording, RecordingStats } from '../types';
-import { showToast, showConfirm } from '../utils/swal';
+import { showToast, showConfirm, showDeleteRecordingConfirm } from '../utils/swal';
 import {
   Disc,
   FileText,
@@ -120,19 +120,23 @@ export const RecordingsPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const deleteRecording = async (id: string) => {
-    const confirmed = await showConfirm({
-      title: '¿Eliminar registro?',
-      text: 'Se eliminará este registro del historial del bot. El archivo en Google Drive se conservará intacto.',
-      confirmText: 'Sí, eliminar',
-      cancelText: 'Cancelar',
-      isDestructive: true,
-    });
+  const deleteRecording = async (target: Recording | string) => {
+    const rec = typeof target === 'string' ? recordings.find((r) => r.id === target) : target;
+    const id = typeof target === 'string' ? target : target.id;
+    const hasDrive = Boolean(rec?.drive_file_id || rec?.drive_url);
+
+    const { confirmed, deleteFromDrive } = await showDeleteRecordingConfirm(hasDrive);
     if (!confirmed) return;
 
     try {
-      await fetchApi(`/api/recordings/${id}`, { method: 'DELETE' });
-      showToast.success('Registro eliminado', 'La reunión se quitó del historial.');
+      const url = `/api/recordings/${id}${deleteFromDrive ? '?deleteFromDrive=true' : ''}`;
+      const data = await fetchApi<{ success: boolean; deletedFromDrive?: boolean }>(url, { method: 'DELETE' });
+      showToast.success(
+        'Registro eliminado',
+        data.deletedFromDrive
+          ? 'El registro se eliminó del bot y el video se envió a la papelera de Google Drive.'
+          : 'La reunión se quitó del historial del bot.'
+      );
       loadRecordings(page);
     } catch (err: any) {
       showToast.error('Error al eliminar', err.message || 'No se pudo eliminar el registro.');
@@ -655,7 +659,7 @@ export const RecordingsPage: React.FC = () => {
                           )}
 
                           <button
-                            onClick={() => deleteRecording(rec.id)}
+                            onClick={() => deleteRecording(rec)}
                             title="Eliminar del historial"
                             className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
                           >
@@ -679,7 +683,7 @@ export const RecordingsPage: React.FC = () => {
                 onStop={(r) => setSelectedForStop(r)}
                 onPause={handlePause}
                 onResume={handleResume}
-                onDelete={(id) => deleteRecording(id)}
+                onDelete={() => deleteRecording(rec)}
                 showDelete={true}
               />
             ))}

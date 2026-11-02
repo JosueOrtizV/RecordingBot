@@ -162,6 +162,36 @@ export async function setDriveFilePrivate(userId: string, fileId: string): Promi
   }
 }
 
+export async function deleteDriveFile(
+  userId: string,
+  fileId: string,
+  permanent: boolean = false
+): Promise<boolean> {
+  try {
+    const auth = await getUserOAuth2Client(userId);
+    const drive = google.drive({ version: 'v3', auth });
+
+    if (permanent) {
+      await drive.files.delete({ fileId });
+    } else {
+      await drive.files.update({
+        fileId,
+        requestBody: {
+          trashed: true,
+        },
+      });
+    }
+    return true;
+  } catch (err: any) {
+    if (err?.code === 404 || err?.status === 404 || err?.message?.includes('File not found')) {
+      console.log(`Drive file ${fileId} already deleted or not found for user ${userId}`);
+      return true;
+    }
+    console.warn(`Error deleting Drive file ${fileId} for user ${userId}:`, err?.message || err);
+    return false;
+  }
+}
+
 export async function syncUserProfileFromGoogle(userId: string): Promise<{ name?: string; pictureUrl?: string } | null> {
   try {
     const auth = await getUserOAuth2Client(userId);
