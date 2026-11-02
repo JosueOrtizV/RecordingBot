@@ -588,6 +588,22 @@ class DiskUploader implements IUploader {
     if (this.fileExtension !== '.mp4') return;
     if (!fs.existsSync(filePath)) return;
 
+    // Defensive fallback: check for audio files on disk if this.audioFilePath wasn't set or is missing
+    if (!this.audioFilePath || !fs.existsSync(this.audioFilePath) || fs.statSync(this.audioFilePath).size === 0) {
+      const baseNoExt = filePath.replace(/\.mp4$/, '');
+      const possibleFallbacks = [
+        `${baseNoExt}.audio.aac`,
+        `${baseNoExt}.audio.part0.aac`,
+      ];
+      for (const fallback of possibleFallbacks) {
+        if (fs.existsSync(fallback) && fs.statSync(fallback).size > 0) {
+          this.audioFilePath = fallback;
+          this._logger.info('[DiskUploader]: Auto-detected fallback PulseAudio recording file on disk:', fallback);
+          break;
+        }
+      }
+    }
+
     const hasExternalAudio = Boolean(this.audioFilePath && fs.existsSync(this.audioFilePath) && fs.statSync(this.audioFilePath).size > 0);
     const outputPath = `${filePath}.transcoded.mp4`;
     this._logger.info('Post-processing video recording to standard MP4 container (H.264 + AAC + faststart)...', {

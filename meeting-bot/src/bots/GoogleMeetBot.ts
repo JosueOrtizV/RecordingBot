@@ -59,14 +59,6 @@ export class GoogleMeetBot extends MeetBotBase {
       this._logger.warn('Could not trigger in-page __stopRecording', err);
     }
 
-    try {
-      if (this.pulseAudioRecorder) {
-        await this.pulseAudioRecorder.stop().catch(() => {});
-      }
-    } catch (err) {
-      this._logger.warn('Could not stop PulseAudio recorder during stop', err);
-    }
-
     if (this.waitingPromise) {
       this.waitingPromise.resolveEarly();
     }
@@ -687,11 +679,19 @@ export class GoogleMeetBot extends MeetBotBase {
           bodyText
         });
 
-        const shouldRetryJoinRequest = !userDenied && !isWorkspaceHomepage &&
-          joinRequestAttempt < maxJoinRequestAttempts &&
-          (Boolean(redirectedFromMeetUrl) || lobbyRequestTimedOut);
+        // In modern Google Meet, timing out in the lobby redirects to workspace.google.com/products/meet.
+        // We SHOULD retry knocking (up to 3 attempts) unless the host explicitly denied access!
+        const maxLobbyRetries = Math.min(3, maxJoinRequestAttempts);
+        const shouldRetryJoinRequest = !userDenied &&
+          joinRequestAttempt < maxLobbyRetries &&
+          (Boolean(redirectedFromMeetUrl) || lobbyRequestTimedOut || isWorkspaceHomepage);
 
         if (shouldRetryJoinRequest) {
+          this._logger.info(`Retrying lobby join request (attempt ${joinRequestAttempt + 1} of ${maxLobbyRetries})...`, {
+            redirectedFromMeetUrl,
+            lobbyRequestTimedOut,
+            isWorkspaceHomepage,
+          });
           continue;
         }
 
@@ -1824,51 +1824,51 @@ Comandos de chat disponibles:
 
     this._logger.info('Waiting for recording duration', config.maxRecordingDuration, 'minutes...');
 
-    waitingPromise.promise.then(async () => {
-      if (this.pulseAudioRecorder) {
-        try {
-          const finalAudioPath = await this.pulseAudioRecorder.stop();
-          if (finalAudioPath && uploader.setAudioRecording) {
-            const offsetSec = (this.videoStartedAt && this.audioStartedAt)
-              ? Math.max(0, (this.videoStartedAt - this.audioStartedAt) / 1000)
-              : 0;
-            uploader.setAudioRecording(finalAudioPath, offsetSec);
-            this._logger.info('[GoogleMeetBot]: Finalized PulseAudio audio recording for upload', {
-              finalAudioPath,
-              offsetSec,
-            });
-          }
-        } catch (stopErr) {
-          this._logger.warn('[GoogleMeetBot]: Error stopping PulseAudio recorder:', stopErr);
-        }
-      }
-
-      // Save transcript before tearing down browser context unless cancelled without save
-      if (!this.isCancelledWithoutSave) {
-        try {
-          const transcriptText = captionTask.getTranscriptFormatter().format();
-          await uploader.saveTranscript(transcriptText);
-        } catch (err) {
-          this._logger.warn('Could not save transcript via uploader:', err);
-        }
-      }
-
-      const context = this.page.context();
-      // For an external CDP browser (the chrome-cdp sidecar), browser.close() only
-      // disconnects Playwright — it leaves the Meet tab open, so the bot stays in
-      // the call. Close the page (tab) instead, which leaves the meeting and keeps
-      // the shared sidecar Chrome alive for the next job.
-      if (isExternalBrowserContext(context)) {
-        this._logger.info('Closing the page (external CDP browser stays up)...');
-        await this.page.close();
-      } else {
-        this._logger.info('Closing the browser...');
-        await context.browser()?.close();
-      }
-
-      this._logger.info('Recording stopped and meeting left; finalizing upload next...', { eventId, botId, userId, teamId });
-    });
-
+    // Wait until recording is signaled to stop (by max duration, alone detection, silence, or manual /bot leave)
     await waitingPromise.promise;
+
+    // Linearly stop PulseAudio recorder and flush audio headers BEFORE finishing recordMeetingPage!
+    if (this.pulseAudioRecorder) {
+      try {
+        const finalAudioPath = await this.pulseAudioRecorder.stop();
+        if (finalAudioPath && uploader.setAudioRecording) {
+          const offsetSec = (this.videoStartedAt && this.audioStartedAt)
+            ? Math.max(0, (this.videoStartedAt - this.audioStartedAt) / 1000)
+            : 0;
+          uploader.setAudioRecording(finalAudioPath, offsetSec);
+          this._logger.info('[GoogleMeetBot]: Finalized PulseAudio audio recording for upload', {
+            finalAudioPath,
+            offsetSec,
+          });
+        }
+      } catch (stopErr) {
+        this._logger.warn('[GoogleMeetBot]: Error stopping PulseAudio recorder:', stopErr);
+      }
+    }
+
+    // Save transcript before tearing down browser context unless cancelled without save
+    if (!this.isCancelledWithoutSave) {
+      try {
+        const transcriptText = captionTask.getTranscriptFormatter().format();
+        await uploader.saveTranscript(transcriptText);
+      } catch (err) {
+        this._logger.warn('Could not save transcript via uploader:', err);
+      }
+    }
+
+    const context = this.page.context();
+    // For an external CDP browser (the chrome-cdp sidecar), browser.close() only
+    // disconnects Playwright — it leaves the Meet tab open, so the bot stays in
+    // the call. Close the page (tab) instead, which leaves the meeting and keeps
+    // the shared sidecar Chrome alive for the next job.
+    if (isExternalBrowserContext(context)) {
+      this._logger.info('Closing the page (external CDP browser stays up)...');
+      await this.page.close().catch(() => {});
+    } else {
+      this._logger.info('Closing the browser...');
+      await context.browser()?.close().catch(() => {});
+    }
+
+    this._logger.info('Recording stopped and meeting left; finalizing upload next...', { eventId, botId, userId, teamId });
   }
 }

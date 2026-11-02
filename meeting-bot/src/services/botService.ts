@@ -28,14 +28,15 @@ export const patchBotStatus = async ({
     });
     return response.data.success;
   } catch(e: any) {
-    logger.error('Can\'t update the bot status', {
-      error: e?.message || String(e),
-      status: e?.response?.status,
-      statusText: e?.response?.statusText,
-      responseData: e?.response?.data,
-      requestData: { eventId, botId, provider, status },
-      stack: e?.stack
-    });
+    if (e?.code === 'ECONNREFUSED' || e?.message?.includes('ECONNREFUSED')) {
+      logger.debug('API v2 service not reachable (standalone mode)', { serviceUrl: config.authBaseUrlV2 });
+    } else {
+      logger.warn("Can't update the bot status via API v2", {
+        error: e?.message || String(e),
+        status: e?.response?.status,
+        requestData: { eventId, botId, provider, status },
+      });
+    }
     return false;
   }
 };
