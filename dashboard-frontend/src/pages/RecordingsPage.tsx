@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../api/client';
 import { Recording, RecordingStats } from '../types';
-import { showToast, showConfirm, showDeleteRecordingConfirm } from '../utils/swal';
+import { showToast, showDeleteRecordingConfirm } from '../utils/swal';
 import {
   Disc,
   FileText,
