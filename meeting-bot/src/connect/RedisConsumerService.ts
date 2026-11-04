@@ -41,6 +41,7 @@ export class RedisConsumerService {
       this._isRunning = true;
       this.setShutdownRequested(false);
 
+      await messageBroker.clearProcessingQueue();
       console.info('Redis consumer service started');
       this.startMessageLoop().catch((error) => {
         console.error('Failed to start message loop:', error);

@@ -245,6 +245,33 @@ export async function pollCalendar(): Promise<void> {
       continue;
     }
 
+    // Database persistence check (survives container restarts):
+    // Check if this meeting event or Meet URL has already been recorded/dispatched in the last 3 hours
+    const eventIds = group.map(g => g.eventId).filter(Boolean);
+    try {
+      const existingCheck = await query(
+        `SELECT id, status FROM recordings
+         WHERE (calendar_event_id = ANY($1::text[]) OR meeting_url LIKE $2)
+           AND created_at >= NOW() - INTERVAL '3 hours'
+         LIMIT 1`,
+        [eventIds, `${meetUrl}%`]
+      );
+
+      if (existingCheck.rows.length > 0) {
+        logger.info(`[CalendarPoller] Skipping meeting "${primary.title}" (${meetUrl}): already exists in DB with status '${existingCheck.rows[0].status}'.`);
+        dispatchedEvents.set(eventKey, {
+          eventId: primary.eventId,
+          title: primary.title,
+          startTime: primary.startTime,
+          endTime: primary.endTime,
+          meetUrl,
+        });
+        continue;
+      }
+    } catch (checkErr) {
+      logger.warn('Failed to check existing recordings in DB:', checkErr);
+    }
+
     const dedupGroupId = group.length > 1 ? uuidv4() : undefined;
     const userNames = group.map(g => g.user.name || g.user.email).join(', ');
 

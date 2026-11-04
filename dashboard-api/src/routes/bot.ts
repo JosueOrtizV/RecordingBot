@@ -255,13 +255,56 @@ router.get('/status', requireAuth, async (req: Request, res: Response) => {
     const stats = await getQueueStats();
 
     // Check all active recordings from DB for global capacity calculation
-    const allActiveRes = await query(
-      `SELECT r.id, r.meeting_title, r.meeting_url, r.recording_mode, r.status, r.started_at, r.user_id, u.name as user_name
+    let allActiveRes = await query(
+      `SELECT r.id, r.meeting_title, r.meeting_url, r.recording_mode, r.status, r.started_at, r.created_at, r.dedup_group_id, r.user_id, u.name as user_name
        FROM recordings r
        JOIN users u ON u.id = r.user_id
        WHERE r.status IN ('pending', 'recording', 'paused', 'processing')
        ORDER BY r.started_at DESC`
     );
+
+    // Reconcile zombie/orphaned recordings if worker restarted
+    const meetingBotUrl = process.env.MEETING_BOT_URL || 'http://meeting-bot:3000';
+    try {
+      if (allActiveRes.rows.some((r: any) => ['recording', 'paused'].includes(r.status))) {
+        const activeResp = await fetch(`${meetingBotUrl}/bot/active`, { signal: AbortSignal.timeout(1200) });
+        if (activeResp.ok) {
+          const activeData: any = await activeResp.json();
+          const liveBotIds = new Set<string>((activeData.activeBots || []).map((b: any) => b.botId));
+
+          let hadZombies = false;
+          for (const r of allActiveRes.rows) {
+            if (['recording', 'paused'].includes(r.status)) {
+              const ageMs = Date.now() - new Date(r.started_at || r.created_at).getTime();
+              // If older than 90s and bot is not alive in meeting-bot worker
+              if (ageMs > 90_000 && !liveBotIds.has(r.id)) {
+                hadZombies = true;
+                await query(
+                  `UPDATE recordings
+                   SET status = 'failed',
+                       error_message = 'Interrumpida por reinicio del servidor',
+                       completed_at = NOW()
+                   WHERE id = $1`,
+                  [r.id]
+                );
+              }
+            }
+          }
+
+          if (hadZombies) {
+            allActiveRes = await query(
+              `SELECT r.id, r.meeting_title, r.meeting_url, r.recording_mode, r.status, r.started_at, r.created_at, r.dedup_group_id, r.user_id, u.name as user_name
+               FROM recordings r
+               JOIN users u ON u.id = r.user_id
+               WHERE r.status IN ('pending', 'recording', 'paused', 'processing')
+               ORDER BY r.started_at DESC`
+            );
+          }
+        }
+      }
+    } catch {
+      // Worker offline or busy, continue
+    }
 
     const allActiveRows = allActiveRes.rows;
     // Only return active recordings belonging to the current authenticated user (for privacy)

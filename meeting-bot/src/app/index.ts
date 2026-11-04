@@ -70,6 +70,18 @@ app.use('/google', googleRouter);
 app.use('/microsoft', microsoftRouter);
 app.use('/zoom', zoomRouter);
 
+// Endpoint to list currently active bot IDs
+app.get('/bot/active', (req, res) => {
+  const activeBots = activeBotRegistry.getAll().map(b => ({
+    botId: b.botId,
+    meetingTitle: b.meetingTitle,
+    url: b.url,
+    userId: b.userId,
+    isPaused: b.isPaused ? b.isPaused() : false,
+  }));
+  res.json({ activeBots });
+});
+
 // Endpoint to stop a live bot
 app.post('/bot/:botId/stop', async (req, res) => {
   const { botId } = req.params;

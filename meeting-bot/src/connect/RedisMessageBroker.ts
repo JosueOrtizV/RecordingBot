@@ -118,6 +118,17 @@ export class RedisMessageBroker extends EventEmitter {
    * This function accompanies container shutdown and closes redis connection to free up server resources
    * @return void
    */
+  async clearProcessingQueue(): Promise<void> {
+    try {
+      if (this.meetbot?.isOpen) {
+        await this.meetbot.del(config.redisProcessingQueueName);
+        console.log(`[RedisMessageBroker] Cleared stale processing queue: ${config.redisProcessingQueueName}`);
+      }
+    } catch (err) {
+      console.warn('Could not clear processing queue:', err);
+    }
+  }
+
   async quitClientGracefully() {
     try {
       if (this.meetbot?.isOpen) {
