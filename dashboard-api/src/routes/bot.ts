@@ -9,6 +9,10 @@ const router = Router();
 
 function normalizeMeetingUrl(url: string): string {
   const clean = url.trim();
+  const match = clean.match(/(?:meet\.google\.com\/(?:meet\/)?|^)([a-z]{3}-[a-z]{4}-[a-z]{3})/i);
+  if (match) {
+    return `https://meet.google.com/${match[1].toLowerCase()}`;
+  }
   return clean.split('?')[0].split('#')[0].replace(/\/+$/, '');
 }
 

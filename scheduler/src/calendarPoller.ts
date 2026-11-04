@@ -17,23 +17,28 @@ interface DispatchedEvent {
 const dispatchedEvents = new Map<string, DispatchedEvent>();
 
 export function extractGoogleMeetUrl(event: any): string | null {
+  const normalize = (rawUrl: string): string => {
+    const match = rawUrl.match(/(?:meet\.google\.com\/(?:meet\/)?|^)([a-z]{3}-[a-z]{4}-[a-z]{3})/i);
+    return match ? `https://meet.google.com/${match[1].toLowerCase()}` : rawUrl;
+  };
+
   if (event.hangoutLink && event.hangoutLink.includes('meet.google.com')) {
-    return event.hangoutLink;
+    return normalize(event.hangoutLink);
   }
 
   const entryPoints = event.conferenceData?.entryPoints || [];
   for (const entry of entryPoints) {
     if (entry.entryPointType === 'video' && entry.uri?.includes('meet.google.com')) {
-      return entry.uri;
+      return normalize(entry.uri);
     }
   }
 
-  const regex = /https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i;
+  const regex = /https:\/\/meet\.google\.com\/(?:meet\/)?[a-z]{3}-[a-z]{4}-[a-z]{3}/i;
   const matchDesc = event.description?.match(regex);
-  if (matchDesc) return matchDesc[0];
+  if (matchDesc) return normalize(matchDesc[0]);
 
   const matchLoc = event.location?.match(regex);
-  if (matchLoc) return matchLoc[0];
+  if (matchLoc) return normalize(matchLoc[0]);
 
   return null;
 }

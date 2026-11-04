@@ -50,8 +50,19 @@ export const JoinMeetingPage: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  const extractMeetCode = (str: string): string | null => {
+    const clean = str.trim();
+    const match = clean.match(/(?:meet\.google\.com\/(?:meet\/)?|^)([a-z]{3}-[a-z]{4}-[a-z]{3})(?:[\?#].*)?$/i);
+    return match ? match[1].toLowerCase() : null;
+  };
+
   const isValidMeetUrl = (str: string) => {
-    return /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}([\?#].*)?$/i.test(str.trim());
+    return Boolean(extractMeetCode(str));
+  };
+
+  const getCanonicalMeetUrl = (str: string): string => {
+    const code = extractMeetCode(str);
+    return code ? `https://meet.google.com/${code}` : str.trim();
   };
 
   const handleJoin = async (e: React.FormEvent) => {
@@ -69,13 +80,15 @@ export const JoinMeetingPage: React.FC = () => {
     setLoading(true);
     setResult(null);
 
+    const canonicalUrl = getCanonicalMeetUrl(url);
+
     try {
       const data = await fetchApi<{ success: boolean; message: string; botId: string; estimatedWait: string }>(
         '/api/bot/join',
         {
           method: 'POST',
           body: JSON.stringify({
-            url: url.trim(),
+            url: canonicalUrl,
             meetingTitle: title.trim() || undefined,
             recordingMode: mode,
           }),

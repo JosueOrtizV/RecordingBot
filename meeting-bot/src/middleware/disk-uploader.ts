@@ -548,6 +548,25 @@ class DiskUploader implements IUploader {
   private async tempFileExists(): Promise<boolean> {
     try {
       const filePath = DiskUploader.getFilePath(this._userId, this._tempFileId, this.fileExtension);
+      if (fs.existsSync(filePath)) return true;
+
+      // Defensive check for audio mode or pending audio recordings
+      if (this.audioFilePath && fs.existsSync(this.audioFilePath) && fs.statSync(this.audioFilePath).size > 0) {
+        return true;
+      }
+
+      // Check fallback audio part files
+      const baseNoExt = DiskUploader.getFilePath(this._userId, this._tempFileId, '');
+      const possibleFallbacks = [
+        `${baseNoExt}.audio.aac`,
+        `${baseNoExt}.audio.part0.aac`,
+      ];
+      for (const fallback of possibleFallbacks) {
+        if (fs.existsSync(fallback) && fs.statSync(fallback).size > 0) {
+          return true;
+        }
+      }
+
       await fs.promises.access(filePath);
       return true;
     } catch {
@@ -631,7 +650,7 @@ class DiskUploader implements IUploader {
           '-map', '0:v:0',
           '-map', '1:a:0',
           '-c:v', 'libx264',
-          '-preset', 'superfast',
+          '-preset', 'ultrafast',
           '-crf', '22',
           '-pix_fmt', 'yuv420p',
           '-r', '15',
@@ -643,7 +662,7 @@ class DiskUploader implements IUploader {
       } else {
         ffmpegArgs.push(
           '-c:v', 'libx264',
-          '-preset', 'superfast',
+          '-preset', 'ultrafast',
           '-crf', '22',
           '-pix_fmt', 'yuv420p',
           '-r', '15',
@@ -746,20 +765,36 @@ class DiskUploader implements IUploader {
       }
 
       if (this._recordingMode === 'audio') {
+        // Defensive fallback: check for audio files on disk if this.audioFilePath wasn't set or is missing
+        if (!this.audioFilePath || !fs.existsSync(this.audioFilePath) || fs.statSync(this.audioFilePath).size === 0) {
+          const baseNoExt = DiskUploader.getFilePath(this._userId, this._tempFileId, '');
+          const possibleFallbacks = [
+            `${baseNoExt}.audio.aac`,
+            `${baseNoExt}.audio.part0.aac`,
+          ];
+          for (const fallback of possibleFallbacks) {
+            if (fs.existsSync(fallback) && fs.statSync(fallback).size > 0) {
+              this.audioFilePath = fallback;
+              this._logger.info('[DiskUploader]: Auto-detected fallback PulseAudio recording file for audio-only mode:', fallback);
+              break;
+            }
+          }
+        }
+
         const inputPath = (this.audioFilePath && fs.existsSync(this.audioFilePath) && fs.statSync(this.audioFilePath).size > 0)
           ? this.audioFilePath
           : DiskUploader.getFilePath(this._userId, this._tempFileId, '.webm');
         const outputPath = DiskUploader.getFilePath(this._userId, this._tempFileId, '.mp3');
         if (fs.existsSync(inputPath)) {
-          this._logger.info('Converting audio recording to MP3 format...', { inputPath, outputPath });
+          this._logger.info('Converting audio recording to MP3 format (128k stereo)...', { inputPath, outputPath });
           try {
             await execFileAsync('ffmpeg', [
               '-y',
               '-i', inputPath,
               '-vn',
-              '-ac', '1',
+              '-ac', '2',
               '-c:a', 'libmp3lame',
-              '-b:a', '64k',
+              '-b:a', '128k',
               outputPath,
             ], { maxBuffer: 10 * 1024 * 1024 });
             if (fs.existsSync(outputPath)) {
@@ -1047,6 +1082,12 @@ class DiskUploader implements IUploader {
         this._logger.info('Force upload is enabled. Ignoring disk writing check results...', { goodToGo });
       } else if (!goodToGo) {
         throw new Error(`Unable to finalise the temp recording file: ${this._userId} ${this._botId}`);
+      }
+
+      // Verify that final file exists on disk after finalization
+      const activeFinalPath = DiskUploader.getFilePath(this._userId, this._tempFileId, this.fileExtension);
+      if (!fs.existsSync(activeFinalPath)) {
+        throw new Error(`Final recording file missing on disk after finalization: ${activeFinalPath}`);
       }
 
       let uploadResult = false;
