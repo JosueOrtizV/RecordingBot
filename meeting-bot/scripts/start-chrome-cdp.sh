@@ -132,7 +132,6 @@ for ((i=0; i<NUM_SLOTS; i++)); do
     --no-default-browser-check \
     --disable-dev-shm-usage \
     --disable-gpu \
-    --audio-buffer-size=4096 \
     --disable-background-timer-throttling \
     --disable-backgrounding-occluded-windows \
     --disable-renderer-backgrounding \

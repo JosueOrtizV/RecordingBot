@@ -55,6 +55,7 @@ export class PulseAudioRecorder {
         '-thread_queue_size', '4096',
         '-fragment_size', '16384',
         '-i', monitorSource,
+        '-af', 'alimiter=limit=0.89:level=false',
         '-c:a', 'aac',
         '-b:a', '192k',
         '-ar', '48000',
