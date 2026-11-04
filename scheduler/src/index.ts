@@ -32,7 +32,7 @@ async function startNotificationListener() {
               `UPDATE recordings
                SET status = $1
                WHERE (id::text = $2 OR calendar_event_id = $2)
-                 AND status IN ('pending', 'recording', 'paused')`,
+                 AND status IN ('pending', 'recording', 'paused', 'processing')`,
               [status, targetId]
             );
 
@@ -46,7 +46,7 @@ async function startNotificationListener() {
                 `UPDATE recordings
                  SET status = $1
                  WHERE dedup_group_id::text = $2
-                   AND status IN ('pending', 'recording', 'paused')`,
+                   AND status IN ('pending', 'recording', 'paused', 'processing')`,
                 [status, rowRes.rows[0].dedup_group_id]
               );
             }

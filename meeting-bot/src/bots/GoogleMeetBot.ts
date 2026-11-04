@@ -1827,6 +1827,16 @@ Comandos de chat disponibles:
     // Wait until recording is signaled to stop (by max duration, alone detection, silence, or manual /bot leave)
     await waitingPromise.promise;
 
+    const targetStatusId = botId ?? eventId ?? userId;
+    if (targetStatusId && !this.isCancelledWithoutSave) {
+      notifyRecordingStatusChange({
+        recordingId: targetStatusId,
+        botId: targetStatusId,
+        status: 'processing',
+        timestamp: new Date().toISOString(),
+      }, this._logger).catch(err => this._logger.warn('Failed to notify recording status processing:', err));
+    }
+
     // Linearly stop PulseAudio recorder and flush audio headers BEFORE finishing recordMeetingPage!
     if (this.pulseAudioRecorder) {
       try {

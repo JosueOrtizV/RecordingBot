@@ -69,7 +69,7 @@ export interface Recording {
   drive_url?: string;
   duration_seconds?: number;
   recording_mode: 'video' | 'audio' | 'transcript_only';
-  status: 'pending' | 'recording' | 'paused' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'recording' | 'paused' | 'processing' | 'completed' | 'failed' | 'cancelled';
   error_message?: string;
   has_transcript: boolean;
   transcript_text?: string;

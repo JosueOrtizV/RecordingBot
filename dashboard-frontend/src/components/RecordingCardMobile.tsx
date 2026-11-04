@@ -17,6 +17,7 @@ import {
   Trash2,
   Pause,
   Play,
+  Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -69,6 +70,11 @@ export const RecordingCardMobile: React.FC<RecordingCardMobileProps> = ({
               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
                 <CheckCircle2 className="w-3 h-3 text-emerald-500" />
                 <span>Completada</span>
+              </span>
+            ) : recording.status === 'processing' ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-700 dark:text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 rounded-full">
+                <Loader2 className="w-3 h-3 text-sky-500 animate-spin" />
+                <span>Procesando...</span>
               </span>
             ) : recording.status === 'recording' ? (
               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 dark:text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full animate-pulse">

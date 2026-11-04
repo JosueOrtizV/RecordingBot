@@ -41,7 +41,7 @@ router.post('/join', requireAuth, async (req: Request, res: Response) => {
        FROM recordings
        WHERE user_id = $1
          AND meeting_url LIKE $2
-         AND status IN ('pending', 'recording')`,
+         AND status IN ('pending', 'recording', 'processing')`,
       [user.id, `${canonicalUrl}%`]
     );
 
@@ -88,7 +88,7 @@ router.post('/join', requireAuth, async (req: Request, res: Response) => {
       `SELECT id, user_id, owner_user_id, dedup_group_id, recording_mode, status, meeting_title
        FROM recordings
        WHERE meeting_url LIKE $1
-         AND status IN ('pending', 'recording')
+         AND status IN ('pending', 'recording', 'processing')
        ORDER BY created_at ASC
        LIMIT 1`,
       [`${canonicalUrl}%`]
@@ -145,7 +145,7 @@ router.post('/join', requireAuth, async (req: Request, res: Response) => {
     // Check server capacity before enqueuing a new bot
     const maxConcurrent = process.env.MAX_CONCURRENT_JOBS ? Number(process.env.MAX_CONCURRENT_JOBS) : 4;
     const activeRes = await query(
-      `SELECT COUNT(*) as count FROM recordings WHERE status IN ('pending', 'recording')`
+      `SELECT COUNT(*) as count FROM recordings WHERE status IN ('pending', 'recording', 'processing')`
     );
     const totalActive = parseInt(activeRes.rows[0]?.count || '0', 10);
     if (totalActive >= maxConcurrent + 6) {
@@ -259,7 +259,7 @@ router.get('/status', requireAuth, async (req: Request, res: Response) => {
       `SELECT r.id, r.meeting_title, r.meeting_url, r.recording_mode, r.status, r.started_at, r.user_id, u.name as user_name
        FROM recordings r
        JOIN users u ON u.id = r.user_id
-       WHERE r.status IN ('pending', 'recording', 'paused')
+       WHERE r.status IN ('pending', 'recording', 'paused', 'processing')
        ORDER BY r.started_at DESC`
     );
 
@@ -314,7 +314,7 @@ router.get('/active', requireAuth, async (req: Request, res: Response) => {
     const activeRes = await query(
       `SELECT id, meeting_title, meeting_url, recording_mode, status, started_at
        FROM recordings
-       WHERE user_id = $1 AND status IN ('pending', 'recording', 'paused')
+       WHERE user_id = $1 AND status IN ('pending', 'recording', 'paused', 'processing')
        ORDER BY started_at DESC`,
       [userId]
     );
@@ -461,10 +461,26 @@ router.post('/recordings/:id/stop', requireAuth, async (req: Request, res: Respo
       return;
     }
 
-    // If saving, status will transition to 'completed' once the bot finishes uploading
+    // If saving, transition status to 'processing' immediately so the dashboard displays "Procesando..." instantly
+    await query(
+      `UPDATE recordings
+       SET status = 'processing'
+       WHERE id = $1 AND status IN ('pending', 'recording', 'paused')`,
+      [rec.id]
+    );
+
+    if (rec.dedup_group_id) {
+      await query(
+        `UPDATE recordings
+         SET status = 'processing'
+         WHERE dedup_group_id = $1 AND status IN ('pending', 'recording', 'paused')`,
+        [rec.dedup_group_id]
+      );
+    }
+
     res.json({
       success: true,
-      message: 'Detención solicitada. El bot está guardando la reunión y saldrá de la llamada.',
+      message: 'Detención solicitada. El bot está guardando y procesando la reunión para Google Drive.',
     });
   } catch (err: any) {
     console.error('Error stopping recording:', err);

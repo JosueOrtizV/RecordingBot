@@ -36,7 +36,7 @@ import { RecordingCardMobile } from '../components/RecordingCardMobile';
 
 type TimeRangeFilter = 'today' | 'week' | 'month' | 'all';
 type ModeFilter = 'all' | 'video' | 'audio' | 'transcript_only';
-type StatusFilter = 'all' | 'completed' | 'recording' | 'paused' | 'failed' | 'cancelled';
+type StatusFilter = 'all' | 'completed' | 'recording' | 'paused' | 'processing' | 'failed' | 'cancelled';
 
 export const RecordingsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -119,6 +119,20 @@ export const RecordingsPage: React.FC = () => {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  // Polling automático cuando haya reuniones en curso o procesándose
+  useEffect(() => {
+    const hasLiveRecordings = recordings.some((r) =>
+      ['pending', 'recording', 'paused', 'processing'].includes(r.status)
+    );
+    if (!hasLiveRecordings) return;
+
+    const interval = setInterval(() => {
+      loadRecordings(page);
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [recordings, page]);
 
   const deleteRecording = async (target: Recording | string) => {
     const rec = typeof target === 'string' ? recordings.find((r) => r.id === target) : target;
@@ -404,6 +418,7 @@ export const RecordingsPage: React.FC = () => {
               >
                 <option value="all">Todos los estados</option>
                 <option value="completed">Completadas</option>
+                <option value="processing">Procesando</option>
                 <option value="recording">En Curso</option>
                 <option value="paused">En Pausa</option>
                 <option value="failed">Fallidas</option>
@@ -565,6 +580,11 @@ export const RecordingsPage: React.FC = () => {
                           <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-bold">
                             <CheckCircle2 className="w-3 h-3 text-emerald-500" />
                             Completada
+                          </span>
+                        ) : rec.status === 'processing' ? (
+                          <span className="inline-flex items-center gap-1.5 text-[11px] text-sky-700 dark:text-sky-300 bg-sky-500/10 border border-sky-500/20 px-2.5 py-0.5 rounded-full font-bold">
+                            <Loader2 className="w-3 h-3 text-sky-500 animate-spin" />
+                            Procesando...
                           </span>
                         ) : rec.status === 'recording' ? (
                           <span className="inline-flex items-center gap-1.5 text-[11px] text-rose-700 dark:text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2.5 py-0.5 rounded-full font-bold animate-pulse">

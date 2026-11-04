@@ -80,23 +80,36 @@ export const RecordingDetailPage: React.FC = () => {
     }
   };
 
-  const loadRecording = async () => {
+  const loadRecording = async (silent = false) => {
     if (!id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const data = await fetchApi<{ recording: Recording }>(`/api/recordings/${id}`);
       setRecording(data.recording);
     } catch (err: any) {
-      setError(err.message || 'No se pudo cargar la grabación');
+      if (!silent) setError(err.message || 'No se pudo cargar la grabación');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     loadRecording();
   }, [id]);
+
+  // Polling automático mientras la grabación esté activa o procesándose
+  useEffect(() => {
+    if (!recording) return;
+    const isLive = ['pending', 'recording', 'paused', 'processing'].includes(recording.status);
+    if (!isLive) return;
+
+    const interval = setInterval(() => {
+      loadRecording(true);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [recording?.status, id]);
 
   const formatDuration = (seconds?: number) => {
     if (!seconds || seconds <= 0) return '0 min';
@@ -195,6 +208,12 @@ export const RecordingDetailPage: React.FC = () => {
               <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                 <CheckCircle2 className="w-3 h-3" />
                 Completada
+              </span>
+            )}
+            {recording.status === 'processing' && (
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
+                <Loader2 className="w-3 h-3 text-sky-500 animate-spin" />
+                Procesando video y audio...
               </span>
             )}
             {recording.status === 'recording' && (
@@ -565,11 +584,23 @@ export const RecordingDetailPage: React.FC = () => {
                   <span>Abrir en Google Drive</span>
                 </a>
               </div>
+            ) : recording.status === 'processing' ? (
+              <div className="p-8 text-center bg-sky-50/50 dark:bg-sky-950/20 rounded-2xl border border-sky-200/80 dark:border-sky-800/40 space-y-3">
+                <Loader2 className="w-8 h-8 text-sky-500 animate-spin mx-auto" />
+                <div>
+                  <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Procesando video y audio...
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
+                    La reunión ha concluido. El servidor está preparando el archivo multimedia y subiéndolo a Google Drive. En breves momentos estará disponible.
+                  </p>
+                </div>
+              </div>
             ) : (
               <div className="p-8 text-center bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
                 <Disc className="w-8 h-8 text-slate-400 mx-auto" />
                 <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                  Esta reunión fue grabada en modo solo minuta de texto.
+                  {recording.status === 'recording' ? 'Grabación en curso...' : 'Esta reunión fue grabada en modo solo minuta de texto.'}
                 </p>
               </div>
             )}
@@ -757,7 +788,7 @@ export const RecordingDetailPage: React.FC = () => {
         onClose={() => setStopModalOpen(false)}
         onStopped={(save) => {
           setRecording((prev) =>
-            prev ? { ...prev, status: save ? 'completed' : 'cancelled' } : prev
+            prev ? { ...prev, status: save ? 'processing' : 'cancelled' } : prev
           );
         }}
       />

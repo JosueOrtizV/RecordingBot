@@ -151,7 +151,7 @@ export interface RecordingStartedPayload {
 export interface RecordingStatusChangedPayload {
   recordingId: string;
   botId?: string;
-  status: 'recording' | 'paused';
+  status: 'recording' | 'paused' | 'processing';
   timestamp: string;
 }
 
