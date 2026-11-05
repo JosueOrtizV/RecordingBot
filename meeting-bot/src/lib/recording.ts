@@ -1,6 +1,7 @@
 import { ContentType } from '../types';
 
 export const mp4ContentType: ContentType = 'video/mp4';
+export const mp4Avc3MimeType = 'video/mp4;codecs=avc3';
 export const mp4Avc1MimeType = 'video/mp4;codecs=avc1';
 export const mp4GenericMimeType = 'video/mp4';
 
@@ -27,9 +28,9 @@ export const getRecordingMimeTypesForExtension = (extension: string, isAudioOnly
 
   if (extension === '.mp4') {
     return {
-      mimeTypes: [mp4Avc1MimeType, mp4GenericMimeType, ...webmCaptureMimeTypes],
-      primaryMimeType: mp4Avc1MimeType,
-      secondaryMimeType: webmMimeType,
+      mimeTypes: [mp4Avc3MimeType, mp4Avc1MimeType, mp4GenericMimeType, ...webmCaptureMimeTypes],
+      primaryMimeType: mp4Avc3MimeType,
+      secondaryMimeType: mp4Avc1MimeType,
     };
   }
 

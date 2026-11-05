@@ -19,7 +19,6 @@ import { CaptionTask } from '../tasks/CaptionTask';
 import { activeBotRegistry } from '../lib/activeBots';
 import { notifyRecordingStarted, notifyRecordingStatusChange } from '../services/notificationService';
 import { chromeSlotManager, ChromeSlot } from '../lib/chromeSlotManager';
-import { PulseAudioRecorder } from '../lib/pulseAudioRecorder';
 
 export class GoogleMeetBot extends MeetBotBase {
   private _logger: Logger;
@@ -30,9 +29,6 @@ export class GoogleMeetBot extends MeetBotBase {
   private currentEventId?: string;
   private waitingPromise: WaitPromise | null = null;
   private currentSlot?: ChromeSlot;
-  private pulseAudioRecorder?: PulseAudioRecorder;
-  private audioStartedAt?: number;
-  private videoStartedAt?: number;
 
   constructor(logger: Logger, correlationId: string) {
     super();
@@ -93,13 +89,6 @@ export class GoogleMeetBot extends MeetBotBase {
       this._logger.warn('Could not trigger in-page __pauseRecording', err);
     }
 
-    try {
-      if (this.pulseAudioRecorder) {
-        await this.pulseAudioRecorder.pause().catch(() => {});
-      }
-    } catch (err) {
-      this._logger.warn('Could not pause PulseAudio recorder', err);
-    }
     this.isPaused = true;
     return {
       success: true,
@@ -122,13 +111,6 @@ export class GoogleMeetBot extends MeetBotBase {
       this._logger.warn('Could not trigger in-page __resumeRecording', err);
     }
 
-    try {
-      if (this.pulseAudioRecorder) {
-        await this.pulseAudioRecorder.resume().catch(() => {});
-      }
-    } catch (err) {
-      this._logger.warn('Could not resume PulseAudio recorder', err);
-    }
     this.isPaused = false;
     return {
       success: true,
@@ -964,28 +946,6 @@ Comandos de chat disponibles:
     const isAudioOnly = recordingMode === 'audio';
     const isTranscriptOnly = recordingMode === 'transcript_only';
 
-    // Start native PulseAudio external audio recorder for continuous high-fidelity audio
-    if (!isTranscriptOnly) {
-      const audioBasePath = uploader.getAudioTempFilePath ? uploader.getAudioTempFilePath() : `/tmp/${botId || eventId || userId}`;
-      const pulseServer = this.currentSlot?.pulseServer || config.pulseServer || 'tcp:chrome-cdp:4713';
-      const pulseSink = this.currentSlot?.pulseSink || 'sink_0';
-
-      this._logger.info('[GoogleMeetBot]: Initializing PulseAudio external recorder...', {
-        pulseServer,
-        pulseSink,
-        audioBasePath,
-      });
-
-      this.pulseAudioRecorder = new PulseAudioRecorder(pulseServer, pulseSink, audioBasePath, this._logger);
-      try {
-        await this.pulseAudioRecorder.start();
-        this.audioStartedAt = Date.now();
-        this._logger.info('[GoogleMeetBot]: PulseAudio external recorder started successfully.');
-      } catch (pulseErr) {
-        this._logger.error('[GoogleMeetBot]: Failed to start PulseAudio external recorder:', pulseErr);
-      }
-    }
-
     const processingTime = 0.2 * 60 * 1000;
     const waitingPromise: WaitPromise = getWaitingPromise(processingTime + duration);
     this.waitingPromise = waitingPromise;
@@ -1030,18 +990,13 @@ Comandos de chat disponibles:
     await this.page.exposeFunction('screenAppMeetStarted', (slightlySecretId: string, timestampMs: number) => {
       if (slightlySecretId !== this.slightlySecretId) return;
       try {
-        this.videoStartedAt = Date.now();
-        const startedAt = typeof timestampMs === 'number' && timestampMs > 0 ? new Date(timestampMs) : new Date(this.videoStartedAt);
-        if (uploader.setRecordingStartedAt) {
-          uploader.setRecordingStartedAt(startedAt);
+        if (typeof timestampMs === 'number' && timestampMs > 0) {
+          const startedAt = new Date(timestampMs);
+          if (uploader.setRecordingStartedAt) {
+            uploader.setRecordingStartedAt(startedAt);
+          }
+          this._logger.info(`[GoogleMeetBot]: Media recording officially started at ${startedAt.toISOString()}`);
         }
-        if (this.audioStartedAt && uploader.setAudioRecording) {
-          const offsetSec = Math.max(0, (this.videoStartedAt - this.audioStartedAt) / 1000);
-          const audioBasePath = uploader.getAudioTempFilePath ? uploader.getAudioTempFilePath() : `/tmp/${botId || eventId || userId}`;
-          uploader.setAudioRecording(`${audioBasePath}.aac`, offsetSec);
-          this._logger.info(`[GoogleMeetBot]: Audio offset aligned with video start: ${offsetSec.toFixed(3)}s`);
-        }
-        this._logger.info(`[GoogleMeetBot]: Media recording officially started at ${startedAt.toISOString()}`);
       } catch (error) {
         console.error('Could not process meeting start event', error);
       }
@@ -1127,9 +1082,9 @@ Comandos de chat disponibles:
             stream = await (navigator.mediaDevices as any).getDisplayMedia({
               video: {
                 displaySurface: 'browser',
-                width: { ideal: 1280, max: 1280 },
-                height: { ideal: 720, max: 720 },
-                frameRate: isAudioOnlyMode ? { ideal: 5, max: 5 } : { ideal: 20, max: 20 },
+                width: { ideal: 1280, max: 1920 },
+                height: { ideal: 720, max: 1080 },
+                frameRate: isAudioOnlyMode ? { ideal: 5, max: 10 } : { ideal: 30, max: 30 },
               },
               audio: {
                 autoGainControl: false,
@@ -1166,7 +1121,7 @@ Comandos de chat disponibles:
               mimeType: selectedMimeType,
               ...(isAudioOnlyMode
                 ? { audioBitsPerSecond: 128000 }
-                : { videoBitsPerSecond: 1500000, audioBitsPerSecond: 128000 }),
+                : { videoBitsPerSecond: 2500000, audioBitsPerSecond: 128000 }),
             };
             mediaRecorder = new MediaRecorder(streamToRecord, recorderOptions);
             console.log(`Media Recorder actual mime type: ${mediaRecorder.mimeType}`);
@@ -1851,25 +1806,6 @@ Comandos de chat disponibles:
         status: 'processing',
         timestamp: new Date().toISOString(),
       }, this._logger).catch(err => this._logger.warn('Failed to notify recording status processing:', err));
-    }
-
-    // Linearly stop PulseAudio recorder and flush audio headers BEFORE finishing recordMeetingPage!
-    if (this.pulseAudioRecorder) {
-      try {
-        const finalAudioPath = await this.pulseAudioRecorder.stop();
-        if (finalAudioPath && uploader.setAudioRecording) {
-          const offsetSec = (this.videoStartedAt && this.audioStartedAt)
-            ? Math.max(0, (this.videoStartedAt - this.audioStartedAt) / 1000)
-            : 0;
-          uploader.setAudioRecording(finalAudioPath, offsetSec);
-          this._logger.info('[GoogleMeetBot]: Finalized PulseAudio audio recording for upload', {
-            finalAudioPath,
-            offsetSec,
-          });
-        }
-      } catch (stopErr) {
-        this._logger.warn('[GoogleMeetBot]: Error stopping PulseAudio recorder:', stopErr);
-      }
     }
 
     // Save transcript before tearing down browser context unless cancelled without save

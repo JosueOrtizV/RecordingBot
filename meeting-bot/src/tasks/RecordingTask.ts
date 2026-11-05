@@ -69,9 +69,9 @@ export class RecordingTask extends Task<null, void> {
           const stream: MediaStream = await (navigator.mediaDevices as any).getDisplayMedia({
             video: {
               displaySurface: 'browser',
-              width: { ideal: 1280, max: 1280 },
-              height: { ideal: 720, max: 720 },
-              frameRate: { ideal: 20, max: 20 },
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 },
+              frameRate: { ideal: 30, max: 30 },
             },
             audio: {
               autoGainControl: false,

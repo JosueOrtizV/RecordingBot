@@ -607,23 +607,6 @@ class DiskUploader implements IUploader {
     if (this.fileExtension !== '.mp4') return;
     if (!fs.existsSync(filePath)) return;
 
-    // Defensive fallback: check for audio files on disk if this.audioFilePath wasn't set or is missing
-    if (!this.audioFilePath || !fs.existsSync(this.audioFilePath) || fs.statSync(this.audioFilePath).size === 0) {
-      const baseNoExt = filePath.replace(/\.mp4$/, '');
-      const possibleFallbacks = [
-        `${baseNoExt}.audio.aac`,
-        `${baseNoExt}.audio.part0.aac`,
-      ];
-      for (const fallback of possibleFallbacks) {
-        if (fs.existsSync(fallback) && fs.statSync(fallback).size > 0) {
-          this.audioFilePath = fallback;
-          this._logger.info('[DiskUploader]: Auto-detected fallback PulseAudio recording file on disk:', fallback);
-          break;
-        }
-      }
-    }
-
-    const hasExternalAudio = Boolean(this.audioFilePath && fs.existsSync(this.audioFilePath) && fs.statSync(this.audioFilePath).size > 0);
     const outputPath = `${filePath}.transcoded.mp4`;
 
     let isH264 = false;
@@ -656,9 +639,6 @@ class DiskUploader implements IUploader {
       outputPath,
       isH264,
       hasInternalAudio,
-      hasExternalAudio,
-      audioFilePath: this.audioFilePath,
-      audioOffsetSeconds: this.audioOffsetSeconds,
     });
 
     try {
@@ -671,7 +651,7 @@ class DiskUploader implements IUploader {
         // Tab audio captured with 100% fidelity directly in Chrome
         this._logger.info('[DiskUploader]: Processing video with pristine internal tab audio...');
         if (isH264) {
-          // Fast-path remux: video is already H.264 (avc1) from Chrome MediaRecorder!
+          // Fast-path remux: video is already H.264 from Chrome MediaRecorder!
           // No video re-encoding, finishes in 1-2 seconds, 0 quality loss, converts audio to standard AAC.
           ffmpegArgs.push(
             '-c:v', 'copy',
@@ -693,45 +673,6 @@ class DiskUploader implements IUploader {
             '-b:a', '192k',
             '-ar', '48000',
             '-ac', '2',
-            '-movflags', '+faststart',
-            outputPath
-          );
-        }
-      } else if (hasExternalAudio) {
-        // Audio input (Input 1) from PulseAudio fallback
-        this._logger.info('[DiskUploader]: Using PulseAudio fallback audio for video...');
-        if (this.audioOffsetSeconds > 0.05) {
-          ffmpegArgs.push('-ss', this.audioOffsetSeconds.toFixed(3));
-        }
-        ffmpegArgs.push('-i', this.audioFilePath!);
-
-        if (isH264) {
-          ffmpegArgs.push(
-            '-map', '0:v:0',
-            '-map', '1:a:0',
-            '-c:v', 'copy',
-            '-c:a', 'aac',
-            '-b:a', '192k',
-            '-ar', '48000',
-            '-ac', '2',
-            '-shortest',
-            '-movflags', '+faststart',
-            outputPath
-          );
-        } else {
-          ffmpegArgs.push(
-            '-map', '0:v:0',
-            '-map', '1:a:0',
-            '-c:v', 'libx264',
-            '-preset', 'veryfast',
-            '-crf', '22',
-            '-pix_fmt', 'yuv420p',
-            '-r', '20',
-            '-c:a', 'aac',
-            '-b:a', '192k',
-            '-ar', '48000',
-            '-ac', '2',
-            '-shortest',
             '-movflags', '+faststart',
             outputPath
           );
@@ -761,10 +702,6 @@ class DiskUploader implements IUploader {
 
       await fs.promises.rename(outputPath, filePath);
       this._logger.info('Successfully transcoded recording temp file to standard MP4 container before upload.', { filePath });
-
-      if (hasExternalAudio && this.audioFilePath) {
-        await fs.promises.unlink(this.audioFilePath).catch(() => {});
-      }
 
       // Quality control audit
       try {

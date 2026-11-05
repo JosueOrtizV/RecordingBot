@@ -14,39 +14,20 @@ BASE_PROXY_PORT=9223
 rm -rf /tmp/.X*-lock /tmp/.X11-unix/X* /tmp/nginx.pid || true
 mkdir -p /tmp/.X11-unix
 
-# Start PulseAudio with TCP module enabled and dedicated null-sinks for each slot
+# Start PulseAudio cleanly with default latency and dedicated null-sinks for each slot
 if command -v pulseaudio >/dev/null 2>&1; then
   pulseaudio --kill >/dev/null 2>&1 || true
   rm -rf /tmp/pulse-* /run/user/1001/pulse /home/chrome/.config/pulse || true
 
-  # Set optimal 48kHz audio daemon configuration with stable buffering
-  mkdir -p /home/chrome/.config/pulse
-  cat >/home/chrome/.config/pulse/daemon.conf <<EOF
-default-sample-rate = 48000
-alternate-sample-rate = 48000
-default-sample-format = s16le
-default-sample-channels = 2
-default-channel-map = front-left,front-right
-default-fragments = 8
-default-fragment-size-msec = 25
-high-priority = yes
-nice-level = -11
-realtime-scheduling = no
-rlimit-rtprio = 9
-EOF
-
   pulseaudio -D --exit-idle-time=-1 || true
 
-  # Enable native TCP protocol for remote ffmpeg capture across containers
-  pactl load-module module-native-protocol-tcp auth-anonymous=1 port=4713 >/dev/null 2>&1 || true
-
-  # Virtual default output for backwards compatibility (with norewinds=1)
-  pactl load-module module-null-sink sink_name=virtual_output rate=48000 channels=2 norewinds=1 sink_properties=device.description="Virtual_Output" >/dev/null 2>&1 || true
+  # Virtual default output for backwards compatibility
+  pactl load-module module-null-sink sink_name=virtual_output rate=48000 channels=2 sink_properties=device.description="Virtual_Output" >/dev/null 2>&1 || true
   pactl set-default-sink virtual_output >/dev/null 2>&1 || true
 
-  # Dedicated isolated sinks for each slot (with norewinds=1 to prevent phase/dropout artifacts)
+  # Dedicated isolated sinks for each slot
   for ((i=0; i<NUM_SLOTS; i++)); do
-    pactl load-module module-null-sink sink_name="sink_$i" rate=48000 channels=2 norewinds=1 sink_properties=device.description="Slot_${i}_Output" >/dev/null 2>&1 || true
+    pactl load-module module-null-sink sink_name="sink_$i" rate=48000 channels=2 sink_properties=device.description="Slot_${i}_Output" >/dev/null 2>&1 || true
   done
 fi
 
@@ -118,7 +99,7 @@ for ((i=0; i<NUM_SLOTS; i++)); do
   rm -rf "$profile_dir"/Singleton* || true
   mkdir -p "$profile_dir"
 
-  PULSE_SINK="$sink_name" PULSE_LATENCY_MSEC=200 google-chrome-stable \
+  PULSE_SINK="$sink_name" google-chrome-stable \
     --remote-debugging-address="127.0.0.1" \
     --remote-debugging-port="$cdp_port" \
     --remote-allow-origins='*' \
@@ -131,7 +112,6 @@ for ((i=0; i<NUM_SLOTS; i++)); do
     --no-first-run \
     --no-default-browser-check \
     --disable-dev-shm-usage \
-    --audio-buffer-size=1920 \
     --disable-background-timer-throttling \
     --disable-backgrounding-occluded-windows \
     --disable-renderer-backgrounding \
