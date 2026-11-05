@@ -381,9 +381,19 @@ export class CaptionTask {
         });
       }
 
+      let isScanThrottled = false;
+      function throttledScan() {
+        if (isScanThrottled) return;
+        isScanThrottled = true;
+        setTimeout(() => {
+          isScanThrottled = false;
+          scanForCaptions();
+        }, 300);
+      }
+
       // Observer on document body for live caption nodes
       const observer = new MutationObserver(() => {
-        scanForCaptions();
+        throttledScan();
       });
 
       observer.observe(document.body, {

@@ -1094,16 +1094,14 @@ Comandos de chat disponibles:
         let isOnValidGoogleMeetPageInterval: NodeJS.Timeout;
 
         const sendChunkToServer = async (chunk: Blob) => {
-          const base64 = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              const result = String(reader.result || '');
-              const idx = result.indexOf('base64,');
-              resolve(idx >= 0 ? result.substring(idx + 7) : result);
-            };
-            reader.onerror = () => reject(reader.error);
-            reader.readAsDataURL(chunk);
-          });
+          const buffer = await chunk.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = '';
+          const chunkSize = 32768;
+          for (let i = 0; i < bytes.length; i += chunkSize) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize) as any);
+          }
+          const base64 = btoa(binary);
           await (window as any).screenAppSendData(slightlySecretId, base64);
         };
 
@@ -1119,38 +1117,58 @@ Comandos de chat disponibles:
           let mediaRecorder: MediaRecorder | null = null;
           let hasAudioTracks = false;
 
-          if (!isTranscriptOnlyMode && !isAudioOnlyMode) {
+          if (!isTranscriptOnlyMode) {
             // Check for the availability of the mediaDevices API
             if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
               console.error('MediaDevices or getDisplayMedia not supported in this browser.');
               return;
             }
             
-            // Capture video-only from the tab; audio is captured with 100% fidelity natively via PulseAudio!
             stream = await (navigator.mediaDevices as any).getDisplayMedia({
               video: {
                 displaySurface: 'browser',
                 width: { ideal: 1280, max: 1280 },
                 height: { ideal: 720, max: 720 },
-                frameRate: { ideal: 15, max: 15 },
+                frameRate: isAudioOnlyMode ? { ideal: 5, max: 5 } : { ideal: 20, max: 20 },
               },
-              audio: false,
+              audio: {
+                autoGainControl: false,
+                channels: 2,
+                channelCount: 2,
+                echoCancellation: false,
+                noiseSuppression: false,
+              },
               preferCurrentTab: true,
             });
 
-            hasAudioTracks = false;
+            const audioTracks = stream.getAudioTracks();
+            hasAudioTracks = audioTracks.length > 0;
+            console.log(`[MeetBot]: Tab media captured, audio tracks: ${audioTracks.length}, video tracks: ${stream.getVideoTracks().length}`);
+
+            let streamToRecord: MediaStream = stream;
+            if (isAudioOnlyMode) {
+              // In audio-only mode, immediately stop video tracks to save 100% video encoding CPU
+              stream.getVideoTracks().forEach((track: MediaStreamTrack) => {
+                track.stop();
+              });
+              if (hasAudioTracks) {
+                streamToRecord = new MediaStream(audioTracks);
+              }
+            }
 
             const selectedMimeType = mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
             if (!selectedMimeType) {
               throw new Error(`MediaRecorder does not support requested codecs: ${mimeTypes.join(', ')}`);
             }
 
-            console.log(`Media Recorder will use ${selectedMimeType} video codecs (Mode: ${recordingMode})...`);
+            console.log(`Media Recorder will use ${selectedMimeType} codecs (Mode: ${recordingMode})...`);
             const recorderOptions: any = {
               mimeType: selectedMimeType,
-              videoBitsPerSecond: 1200000,
+              ...(isAudioOnlyMode
+                ? { audioBitsPerSecond: 128000 }
+                : { videoBitsPerSecond: 1500000, audioBitsPerSecond: 128000 }),
             };
-            mediaRecorder = new MediaRecorder(stream, recorderOptions);
+            mediaRecorder = new MediaRecorder(streamToRecord, recorderOptions);
             console.log(`Media Recorder actual mime type: ${mediaRecorder.mimeType}`);
 
             mediaRecorder.ondataavailable = (event: BlobEvent) => {
@@ -1172,8 +1190,6 @@ Comandos de chat disponibles:
             // Start recording with 2-second intervals
             const chunkDuration = 2000;
             mediaRecorder.start(chunkDuration);
-          } else if (isAudioOnlyMode) {
-            console.log('[MeetBot]: Audio-only mode active: tab capture skipped. Audio captured directly via PulseAudio.');
           } else {
             console.log('[MeetBot]: Transcript-only mode: MediaRecorder not started.');
           }

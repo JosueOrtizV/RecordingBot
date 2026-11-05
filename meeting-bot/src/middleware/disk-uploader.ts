@@ -625,9 +625,37 @@ class DiskUploader implements IUploader {
 
     const hasExternalAudio = Boolean(this.audioFilePath && fs.existsSync(this.audioFilePath) && fs.statSync(this.audioFilePath).size > 0);
     const outputPath = `${filePath}.transcoded.mp4`;
+
+    let isH264 = false;
+    let hasInternalAudio = false;
+    try {
+      const { stdout: probeStreamOut } = await execFileAsync('ffprobe', [
+        '-v', 'error',
+        '-show_entries', 'stream=index,codec_type,codec_name',
+        '-of', 'json',
+        filePath,
+      ], { maxBuffer: 1024 * 1024 });
+      const probeStreams = JSON.parse(probeStreamOut).streams || [];
+      const vStream = probeStreams.find((s: any) => s.codec_type === 'video');
+      const aStream = probeStreams.find((s: any) => s.codec_type === 'audio');
+      isH264 = vStream?.codec_name === 'h264';
+      hasInternalAudio = Boolean(aStream);
+      this._logger.info('[DiskUploader]: Container stream probe result:', {
+        filePath,
+        videoCodec: vStream?.codec_name,
+        isH264,
+        hasInternalAudio,
+        audioCodec: aStream?.codec_name,
+      });
+    } catch (probeErr) {
+      this._logger.warn('[DiskUploader]: ffprobe error checking stream codecs:', probeErr);
+    }
+
     this._logger.info('Post-processing video recording to standard MP4 container (H.264 + AAC + faststart)...', {
       inputPath: filePath,
       outputPath,
+      isH264,
+      hasInternalAudio,
       hasExternalAudio,
       audioFilePath: this.audioFilePath,
       audioOffsetSeconds: this.audioOffsetSeconds,
@@ -639,40 +667,94 @@ class DiskUploader implements IUploader {
       // Video input (Input 0)
       ffmpegArgs.push('-i', filePath);
 
-      if (hasExternalAudio) {
-        // Audio input (Input 1) from PulseAudio
+      if (hasInternalAudio) {
+        // Tab audio captured with 100% fidelity directly in Chrome
+        this._logger.info('[DiskUploader]: Processing video with pristine internal tab audio...');
+        if (isH264) {
+          // Fast-path remux: video is already H.264 (avc1) from Chrome MediaRecorder!
+          // No video re-encoding, finishes in 1-2 seconds, 0 quality loss, converts audio to standard AAC.
+          ffmpegArgs.push(
+            '-c:v', 'copy',
+            '-c:a', 'aac',
+            '-b:a', '192k',
+            '-ar', '48000',
+            '-ac', '2',
+            '-movflags', '+faststart',
+            outputPath
+          );
+        } else {
+          ffmpegArgs.push(
+            '-c:v', 'libx264',
+            '-preset', 'veryfast',
+            '-crf', '22',
+            '-pix_fmt', 'yuv420p',
+            '-r', '20',
+            '-c:a', 'aac',
+            '-b:a', '192k',
+            '-ar', '48000',
+            '-ac', '2',
+            '-movflags', '+faststart',
+            outputPath
+          );
+        }
+      } else if (hasExternalAudio) {
+        // Audio input (Input 1) from PulseAudio fallback
+        this._logger.info('[DiskUploader]: Using PulseAudio fallback audio for video...');
         if (this.audioOffsetSeconds > 0.05) {
           ffmpegArgs.push('-ss', this.audioOffsetSeconds.toFixed(3));
         }
         ffmpegArgs.push('-i', this.audioFilePath!);
 
-        ffmpegArgs.push(
-          '-map', '0:v:0',
-          '-map', '1:a:0',
-          '-c:v', 'libx264',
-          '-preset', 'ultrafast',
-          '-crf', '22',
-          '-pix_fmt', 'yuv420p',
-          '-r', '15',
-          '-c:a', 'copy',
-          '-shortest',
-          '-movflags', '+faststart',
-          outputPath
-        );
+        if (isH264) {
+          ffmpegArgs.push(
+            '-map', '0:v:0',
+            '-map', '1:a:0',
+            '-c:v', 'copy',
+            '-c:a', 'aac',
+            '-b:a', '192k',
+            '-ar', '48000',
+            '-ac', '2',
+            '-shortest',
+            '-movflags', '+faststart',
+            outputPath
+          );
+        } else {
+          ffmpegArgs.push(
+            '-map', '0:v:0',
+            '-map', '1:a:0',
+            '-c:v', 'libx264',
+            '-preset', 'veryfast',
+            '-crf', '22',
+            '-pix_fmt', 'yuv420p',
+            '-r', '20',
+            '-c:a', 'aac',
+            '-b:a', '192k',
+            '-ar', '48000',
+            '-ac', '2',
+            '-shortest',
+            '-movflags', '+faststart',
+            outputPath
+          );
+        }
       } else {
-        ffmpegArgs.push(
-          '-c:v', 'libx264',
-          '-preset', 'ultrafast',
-          '-crf', '22',
-          '-pix_fmt', 'yuv420p',
-          '-r', '15',
-          '-c:a', 'aac',
-          '-b:a', '128k',
-          '-ar', '48000',
-          '-ac', '2',
-          '-movflags', '+faststart',
-          outputPath
-        );
+        // Video only fallback
+        if (isH264) {
+          ffmpegArgs.push(
+            '-c:v', 'copy',
+            '-movflags', '+faststart',
+            outputPath
+          );
+        } else {
+          ffmpegArgs.push(
+            '-c:v', 'libx264',
+            '-preset', 'veryfast',
+            '-crf', '22',
+            '-pix_fmt', 'yuv420p',
+            '-r', '20',
+            '-movflags', '+faststart',
+            outputPath
+          );
+        }
       }
 
       await execFileAsync('ffmpeg', ffmpegArgs, { maxBuffer: 20 * 1024 * 1024 });
@@ -781,12 +863,27 @@ class DiskUploader implements IUploader {
           }
         }
 
-        const inputPath = (this.audioFilePath && fs.existsSync(this.audioFilePath) && fs.statSync(this.audioFilePath).size > 0)
-          ? this.audioFilePath
-          : DiskUploader.getFilePath(this._userId, this._tempFileId, '.webm');
+        const webmPath = DiskUploader.getFilePath(this._userId, this._tempFileId, '.webm');
+        const mp4Path = DiskUploader.getFilePath(this._userId, this._tempFileId, '.mp4');
+        const hasWebmAudio = fs.existsSync(webmPath) && fs.statSync(webmPath).size > 0;
+        const hasMp4Audio = fs.existsSync(mp4Path) && fs.statSync(mp4Path).size > 0;
+        const hasExternalAudio = Boolean(this.audioFilePath && fs.existsSync(this.audioFilePath) && fs.statSync(this.audioFilePath).size > 0);
+
+        let inputPath: string | null = null;
+        if (hasWebmAudio) {
+          inputPath = webmPath;
+          this._logger.info('[DiskUploader]: Audio-only mode using browser tab audio WebM:', webmPath);
+        } else if (hasMp4Audio) {
+          inputPath = mp4Path;
+          this._logger.info('[DiskUploader]: Audio-only mode using browser tab audio MP4:', mp4Path);
+        } else if (hasExternalAudio) {
+          inputPath = this.audioFilePath!;
+          this._logger.info('[DiskUploader]: Audio-only mode using PulseAudio fallback audio:', this.audioFilePath);
+        }
+
         const outputPath = DiskUploader.getFilePath(this._userId, this._tempFileId, '.mp3');
-        if (fs.existsSync(inputPath)) {
-          this._logger.info('Converting audio recording to MP3 format (128k stereo)...', { inputPath, outputPath });
+        if (inputPath && fs.existsSync(inputPath)) {
+          this._logger.info('Converting audio recording to MP3 format (192k stereo)...', { inputPath, outputPath });
           try {
             await execFileAsync('ffmpeg', [
               '-y',
@@ -794,16 +891,20 @@ class DiskUploader implements IUploader {
               '-vn',
               '-ac', '2',
               '-c:a', 'libmp3lame',
-              '-b:a', '128k',
+              '-b:a', '192k',
+              '-ar', '48000',
               outputPath,
             ], { maxBuffer: 10 * 1024 * 1024 });
             if (fs.existsSync(outputPath)) {
               await fs.promises.unlink(inputPath).catch(() => {});
+              if (this.audioFilePath && fs.existsSync(this.audioFilePath)) {
+                await fs.promises.unlink(this.audioFilePath).catch(() => {});
+              }
               this.fileExtension = '.mp3';
               this.contentType = 'audio/mpeg' as ContentType;
             }
           } catch (audioErr) {
-            this._logger.warn('Failed to convert audio to MP3, keeping original WebM audio:', audioErr);
+            this._logger.warn('Failed to convert audio to MP3, keeping original audio:', audioErr);
           }
         }
       } else {

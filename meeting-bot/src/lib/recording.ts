@@ -14,7 +14,7 @@ export const audioWebmMimeType = 'audio/webm;codecs=opus';
 export const audioGenericWebmMimeType = 'audio/webm';
 export const audioMp4MimeType = 'audio/mp4';
 
-export const getRecordingMimeTypesForExtension = (_extension: string, isAudioOnly: boolean = false) => {
+export const getRecordingMimeTypesForExtension = (extension: string, isAudioOnly: boolean = false) => {
   if (isAudioOnly) {
     return {
       mimeTypes: [audioWebmMimeType, audioGenericWebmMimeType, audioMp4MimeType],
@@ -23,15 +23,19 @@ export const getRecordingMimeTypesForExtension = (_extension: string, isAudioOnl
     };
   }
 
-  // Always prefer WebM VP8 during live browser MediaRecorder capture:
-  // 1. VP8 software encoding in headless Xvfb uses minimal CPU when capturing video-only.
-  // 2. WebM handles dynamic Google Meet resolution changes without breaking stream headers.
-  // 3. DiskUploader muxes the video with pristine PulseAudio audio into standard MP4 after the call.
-  const webmCaptureMimeTypes = ['video/webm;codecs=vp8', vp8WebmMimeType, webmMimeType, 'video/webm'];
+  const webmCaptureMimeTypes = ['video/webm;codecs=vp8,opus', webmMimeType, 'video/webm'];
+
+  if (extension === '.mp4') {
+    return {
+      mimeTypes: [mp4Avc1MimeType, mp4GenericMimeType, ...webmCaptureMimeTypes],
+      primaryMimeType: mp4Avc1MimeType,
+      secondaryMimeType: webmMimeType,
+    };
+  }
 
   return {
     mimeTypes: webmCaptureMimeTypes,
-    primaryMimeType: vp8WebmMimeType,
-    secondaryMimeType: webmMimeType,
+    primaryMimeType: webmMimeType,
+    secondaryMimeType: 'video/webm;codecs=vp8,opus',
   };
 };
