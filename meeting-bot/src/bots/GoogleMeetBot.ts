@@ -754,6 +754,21 @@ export class GoogleMeetBot extends MeetBotBase {
       this._logger.info('"Got it" modals might be missing...', { error });
     }
 
+    // Dismiss any modal dialog (e.g. "Configuración" / Settings dialog) if open upon join
+    try {
+      await this.page.evaluate(() => {
+        const dialogCloseButtons = Array.from(document.querySelectorAll('[role="dialog"] button, [role="alertdialog"] button')) as HTMLButtonElement[];
+        for (const btn of dialogCloseButtons) {
+          const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
+          const txt = (btn.textContent || '').trim().toLowerCase();
+          const matIcon = btn.querySelector('i')?.textContent?.trim().toLowerCase() || '';
+          if (aria.includes('cerrar') || aria.includes('close') || aria.includes('descartar') || aria.includes('dismiss') || txt === 'cerrar' || txt === 'close' || matIcon === 'close') {
+            btn.click();
+          }
+        }
+      });
+    } catch {}
+
     // Dismiss "Microphone not found" and "Camera not found" notifications if present
     try {
       this._logger.info('Checking for device notifications (microphone/camera)...');
@@ -1647,6 +1662,18 @@ Comandos de chat disponibles:
             const maxDismissModalErrorCount = 10;
             dismissModalsInterval = setInterval(() => {
               try {
+                // Proactively dismiss any modal dialog (e.g. "Configuración" / Settings dialog)
+                const dialogCloseButtons = Array.from(document.querySelectorAll('[role="dialog"] button, [role="alertdialog"] button')) as HTMLButtonElement[];
+                for (const btn of dialogCloseButtons) {
+                  const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
+                  const txt = (btn.textContent || '').trim().toLowerCase();
+                  const matIcon = btn.querySelector('i')?.textContent?.trim().toLowerCase() || '';
+                  if (aria.includes('cerrar') || aria.includes('close') || aria.includes('descartar') || aria.includes('dismiss') || txt === 'cerrar' || txt === 'close' || matIcon === 'close') {
+                    console.log('Found modal dialog close button, dismissing dialog...', btn);
+                    btn.click();
+                  }
+                }
+
                 const buttons = document.querySelectorAll('button');
                 const dismissButtons = Array.from(buttons).filter((button) => button?.offsetParent !== null && /Got it|Ok|Entendido/i.test(button?.textContent || ''));
                 if (dismissButtons.length > 0) {
@@ -1664,19 +1691,20 @@ Comandos de chat disponibles:
                     bodyText.includes('Camera not found') ||
                     bodyText.includes('Make sure your camera is plugged in') ||
                     bodyText.includes('No se encontró el micrófono') ||
+                    bodyText.includes('No se encontró un micrófono') ||
                     bodyText.includes('No se encontró una cámara') ||
+                    bodyText.includes('No se encontró un altavoz') ||
+                    bodyText.includes('Speaker not found') ||
                     bodyText.includes('Asegúrate de que el micrófono') ||
                     bodyText.includes('Asegúrate de que la cámara') ||
                     bodyText.includes('Mikrofonproblem') ||
                     bodyText.includes('Kameraproblem'))) {
-                  console.log('Found device notification (microphone/camera), attempting to dismiss...');
+                  console.log('Found device notification (microphone/camera/speaker), attempting to dismiss...');
                   const allButtons = Array.from(document.querySelectorAll('button'));
                   const closeButtons = allButtons.filter((btn) => {
                     const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
                     if (ariaLabel.includes('chat') || ariaLabel.includes('panel')) return false;
-                    if (btn.closest('aside, [role="complementary"]')) return false;
-                    const rect = btn.getBoundingClientRect();
-                    if (rect.top < 150 && rect.left > window.innerWidth * 0.6) return false;
+                    if (btn.closest('aside, [role="complementary"], [aria-label*="chat" i], [aria-label*="panel" i]')) return false;
                     const matIcon = btn.querySelector('i')?.textContent?.trim().toLowerCase() || '';
                     return ariaLabel.includes('close') ||
                            ariaLabel.includes('dismiss') ||
@@ -1696,11 +1724,11 @@ Comandos de chat disponibles:
                 lastDimissError = error;
                 dismissModalErrorCount += 1;
                 if (dismissModalErrorCount > maxDismissModalErrorCount) {
-                  console.error(`Failed to detect and dismiss "Got it" modals ${maxDismissModalErrorCount} times, will stop trying...`);
-                  clearInterval(dismissModalsInterval);
+                  console.error(`Failed to detect and dismiss modals ${maxDismissModalErrorCount} times, resetting counter...`);
+                  dismissModalErrorCount = 0;
                 }
               }
-            }, 4000);
+            }, 2000);
           };
 
           const detectMeetingIsOnAValidPage = () => {

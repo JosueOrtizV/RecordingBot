@@ -607,6 +607,11 @@ class DiskUploader implements IUploader {
     if (this.fileExtension !== '.mp4') return;
     if (!fs.existsSync(filePath)) return;
 
+    if (await this.isMp4File(filePath)) {
+      this._logger.info('[DiskUploader]: File is already a valid MP4 container directly from browser. Skipping transcode.', { filePath });
+      return;
+    }
+
     const outputPath = `${filePath}.transcoded.mp4`;
 
     let isH264 = false;

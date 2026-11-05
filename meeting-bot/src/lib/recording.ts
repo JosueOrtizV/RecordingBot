@@ -28,9 +28,9 @@ export const getRecordingMimeTypesForExtension = (extension: string, isAudioOnly
 
   if (extension === '.mp4') {
     return {
-      mimeTypes: [mp4Avc3MimeType, mp4Avc1MimeType, mp4GenericMimeType, ...webmCaptureMimeTypes],
-      primaryMimeType: mp4Avc3MimeType,
-      secondaryMimeType: mp4Avc1MimeType,
+      mimeTypes: [mp4Avc1MimeType, mp4GenericMimeType, ...webmCaptureMimeTypes],
+      primaryMimeType: mp4Avc1MimeType,
+      secondaryMimeType: webmMimeType,
     };
   }
 
