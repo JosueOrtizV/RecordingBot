@@ -14,27 +14,39 @@ BASE_PROXY_PORT=9223
 rm -rf /tmp/.X*-lock /tmp/.X11-unix/X* /tmp/nginx.pid || true
 mkdir -p /tmp/.X11-unix
 
-# Start PulseAudio cleanly with virtual speaker and microphone
+# Start PulseAudio cleanly with 48kHz virtual speaker (no speaker-to-mic loopback)
 if command -v pulseaudio >/dev/null 2>&1; then
   pulseaudio --kill >/dev/null 2>&1 || true
-  rm -rf /tmp/pulse-* /run/user/1001/pulse /home/chrome/.config/pulse || true
+  rm -rf /tmp/pulse-* /run/user/1001/pulse "${HOME:-/home/chrome}/.config/pulse" || true
+  mkdir -p "${HOME:-/home/chrome}/.config/pulse"
+
+  cat >"${HOME:-/home/chrome}/.config/pulse/daemon.conf" <<EOF
+default-sample-format = s16le
+default-sample-rate = 48000
+alternate-sample-rate = 48000
+default-sample-channels = 2
+default-fragments = 8
+default-fragment-size-msec = 25
+exit-idle-time = -1
+flat-volumes = no
+EOF
 
   pulseaudio -D --exit-idle-time=-1 || true
 
-  # Unload suspend-on-idle so sinks and sources NEVER sleep or drop audio buffers
+  # Unload suspend-on-idle so sinks NEVER sleep or drop audio buffers
   pactl unload-module module-suspend-on-idle >/dev/null 2>&1 || true
 
-  # Virtual speaker sink (rate=48000 channels=2)
-  pactl load-module module-null-sink sink_name=virtual_speaker rate=48000 channels=2 sink_properties=device.description="Virtual_Speaker" >/dev/null 2>&1 || true
+  # Virtual speaker sink (rate=48000 format=s16le channels=2)
+  pactl load-module module-null-sink sink_name=virtual_speaker rate=48000 format=s16le channels=2 sink_properties=device.description="Virtual_Speaker" >/dev/null 2>&1 || true
   pactl set-default-sink virtual_speaker >/dev/null 2>&1 || true
-
-  # Virtual microphone source from speaker monitor so Chrome and WebRTC see a valid audio input device
-  pactl load-module module-virtual-source source_name=virtual_mic master=virtual_speaker.monitor source_properties=device.description="Virtual_Microphone" >/dev/null 2>&1 || true
-  pactl set-default-source virtual_mic >/dev/null 2>&1 || true
 fi
 
-Xvfb "$DISPLAY" -screen 0 "${XVFB_SCREEN_SIZE}x24" -ac +extension RANDR >/tmp/xvfb.log 2>&1 &
-xvfb_pid="$!"
+xvfb_pids=()
+for ((i=0; i<NUM_SLOTS; i++)); do
+  slot_display=":$((99 + i))"
+  Xvfb "$slot_display" -screen 0 "${XVFB_SCREEN_SIZE}x24" -ac +extension RANDR >/tmp/xvfb-$i.log 2>&1 &
+  xvfb_pids+=("$!")
+done
 sleep 1
 
 # Generate Nginx configuration for all slots
@@ -88,19 +100,22 @@ cleanup() {
   for pid in "${chrome_pids[@]}"; do
     kill "$pid" >/dev/null 2>&1 || true
   done
-  kill "$xvfb_pid" >/dev/null 2>&1 || true
+  for pid in "${xvfb_pids[@]}"; do
+    kill "$pid" >/dev/null 2>&1 || true
+  done
 }
 trap cleanup EXIT INT TERM
 
-# Start Chrome instances for each slot
+# Start Chrome instances for each slot on its own Xvfb display (no fake media stream)
 for ((i=0; i<NUM_SLOTS; i++)); do
   cdp_port=$(( BASE_CDP_PORT + i * 2 ))
   profile_dir="/tmp/chrome-profile-$i"
+  slot_display=":$((99 + i))"
 
   rm -rf "$profile_dir"/Singleton* || true
   mkdir -p "$profile_dir"
 
-  google-chrome-stable \
+  DISPLAY="$slot_display" google-chrome-stable \
     --remote-debugging-address="127.0.0.1" \
     --remote-debugging-port="$cdp_port" \
     --remote-allow-origins='*' \
@@ -109,7 +124,6 @@ for ((i=0; i<NUM_SLOTS; i++)); do
     --window-position=0,0 \
     --force-device-scale-factor=1 \
     --auto-accept-this-tab-capture \
-    --use-fake-ui-for-media-stream \
     --autoplay-policy=no-user-gesture-required \
     --no-first-run \
     --no-default-browser-check \
