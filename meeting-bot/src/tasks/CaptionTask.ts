@@ -16,10 +16,26 @@ export class CaptionTask {
     this.formatter = new TranscriptFormatter(meetingTitle);
   }
 
-  private async ensureCaptionsEnabled(): Promise<void> {
+  private async ensureCaptionsEnabled(): Promise<boolean> {
     try {
       const result = await this.page.evaluate(() => {
-        // 1. Check if direct toggle button (jsname="RrG0hf") is already in DOM and visible
+        // 1. FIRST check if live captions region is already visible and active in the DOM
+        const activeRegion = document.querySelector('div[role="region"][aria-label*="ubt" i], div[role="region"][aria-label*="aption" i]') as HTMLElement | null;
+        if (activeRegion && (activeRegion.getBoundingClientRect().height > 0 || activeRegion.children.length > 0)) {
+          return 'already_active_region';
+        }
+
+        // 2. Check if toolbar button explicitly says "Desactivar subtítulos" / "Turn off captions"
+        const allBtns = Array.from(document.querySelectorAll('button'));
+        for (const btn of allBtns) {
+          if (btn.getBoundingClientRect().width === 0) continue;
+          const label = (btn.getAttribute('aria-label') || '').toLowerCase();
+          if (label.includes('desactivar subt') || label.includes('turn off caption')) {
+            return 'already_active_toolbar';
+          }
+        }
+
+        // 3. Check if direct toggle button (jsname="RrG0hf") is already in DOM and visible
         const rrgBtn = document.querySelector('button[jsname="RrG0hf"]') as HTMLElement | null;
         if (rrgBtn && rrgBtn.getBoundingClientRect().width > 0) {
           const label = (rrgBtn.getAttribute('aria-label') || '').toLowerCase();
@@ -28,13 +44,16 @@ export class CaptionTask {
             label.includes('desactivar') ||
             label.includes('turn off') ||
             rrgBtn.getAttribute('aria-pressed') === 'true' ||
+            rrgBtn.getAttribute('aria-checked') === 'true' ||
+            rrgBtn.getAttribute('data-is-muted') === 'false' ||
             iconText === 'closed_caption';
           const isOff =
             !isAlreadyOn &&
             (iconText === 'closed_caption_off' ||
               /\bactivar\b/.test(label) ||
               label.includes('turn on') ||
-              rrgBtn.getAttribute('aria-pressed') === 'false');
+              rrgBtn.getAttribute('aria-pressed') === 'false' ||
+              rrgBtn.getAttribute('aria-checked') === 'false');
           if (isOff) {
             rrgBtn.click();
             return 'clicked_rrg0hf_direct';
@@ -42,20 +61,10 @@ export class CaptionTask {
           return 'already_active_rrg0hf';
         }
 
-        // 2. Check if live captions region is already visible and active
-        const activeRegion = document.querySelector('div[role="region"][aria-label*="ubt" i], div[role="region"][aria-label*="aption" i]') as HTMLElement | null;
-        if (activeRegion && activeRegion.getBoundingClientRect().height > 0) {
-          return 'already_active_region';
-        }
-
-        // 3. Look for toolbar button ("Subtítulos y traducción" / "Activar subtítulos" / "Captions")
-        const buttons = Array.from(document.querySelectorAll('button'));
-        for (const btn of buttons) {
+        // 4. Look for toolbar button ("Subtítulos y traducción" / "Activar subtítulos" / "Captions")
+        for (const btn of allBtns) {
           if (btn.getBoundingClientRect().width === 0) continue;
           const label = (btn.getAttribute('aria-label') || '').toLowerCase();
-          if (label.includes('desactivar subt') || label.includes('turn off caption')) {
-            return 'already_active_toolbar';
-          }
           if (
             (!label.includes('desactivar') && label.includes('activar subt')) ||
             label.includes('turn on caption') ||
@@ -72,6 +81,10 @@ export class CaptionTask {
 
       this.logger.info(`[CaptionTask]: Initial caption toggle step result: ${result}`);
 
+      if (result.startsWith('already_active_') || result === 'clicked_rrg0hf_direct' || result === 'clicked_toolbar_toggle') {
+        return true;
+      }
+
       if (result === 'opened_popup_menu') {
         await this.page.waitForTimeout(800);
         const innerResult = await this.page.evaluate(() => {
@@ -83,13 +96,16 @@ export class CaptionTask {
               label.includes('desactivar') ||
               label.includes('turn off') ||
               rrgBtn.getAttribute('aria-pressed') === 'true' ||
+              rrgBtn.getAttribute('aria-checked') === 'true' ||
+              rrgBtn.getAttribute('data-is-muted') === 'false' ||
               iconText === 'closed_caption';
             const isOff =
               !isAlreadyOn &&
               (iconText === 'closed_caption_off' ||
                 /\bactivar\b/.test(label) ||
                 label.includes('turn on') ||
-                rrgBtn.getAttribute('aria-pressed') === 'false');
+                rrgBtn.getAttribute('aria-pressed') === 'false' ||
+                rrgBtn.getAttribute('aria-checked') === 'false');
             if (isOff) {
               rrgBtn.click();
               return 'clicked_inner_rrg0hf';
@@ -113,12 +129,16 @@ export class CaptionTask {
         });
         this.logger.info(`[CaptionTask]: Inner caption popup toggle result: ${innerResult}`);
         await this.page.waitForTimeout(500);
+        return innerResult !== 'inner_not_found';
       } else if (result === 'not_found') {
         await this.page.keyboard.press('c');
         this.logger.info('[CaptionTask]: Pressed "c" key to enable closed captions');
+        return true;
       }
+      return false;
     } catch (err) {
       this.logger.warn('[CaptionTask]: Could not enable captions', err);
+      return false;
     }
   }
 
@@ -162,7 +182,8 @@ export class CaptionTask {
     await this.page.waitForTimeout(1000);
 
     // 1. Turn on captions (supports both direct button and new "Subtítulos y traducción" dialog)
-    await this.ensureCaptionsEnabled();
+    const enabledInStep1 = await this.ensureCaptionsEnabled();
+    let openedFullSettingsModal = false;
 
     // Try to set language to Spanish Mexico via the UI (first checking if combobox is already in the open popup dialog)
     try {
@@ -204,6 +225,7 @@ export class CaptionTask {
         }
         await this.page.waitForTimeout(500);
       } else {
+        openedFullSettingsModal = true;
         // Close any open popup dialog before clicking More Options
         await this.page.keyboard.press('Escape').catch(() => {});
         await this.page.waitForTimeout(500);
@@ -303,17 +325,21 @@ export class CaptionTask {
       this.logger.warn('[CaptionTask]: Could not set captions language via UI (might already be set)', err);
     }
 
-    // Re-verify captions are enabled after language check
-    await this.page.waitForTimeout(500);
-    await this.ensureCaptionsEnabled();
-
-    // Close any open translation popup dialog by clicking center of video area or Escape if dialog is open
+    // First close any open translation popup dialog before re-checking
     await this.page.evaluate(() => {
       const dialog = document.querySelector('div[role="dialog"][aria-label*="ubt" i], div[role="dialog"][aria-label*="aption" i]');
       if (dialog && (dialog as HTMLElement).getBoundingClientRect().width > 0) {
         document.body.click();
       }
     }).catch(() => {});
+    await this.page.keyboard.press('Escape').catch(() => {});
+    await this.page.waitForTimeout(500);
+
+    // Only call ensureCaptionsEnabled a second time if we opened the full Settings modal or step 1 did not already enable captions
+    if (openedFullSettingsModal || !enabledInStep1) {
+      await this.ensureCaptionsEnabled();
+      await this.page.keyboard.press('Escape').catch(() => {});
+    }
 
     // 2. Inject DOM MutationObserver into page
     await this.page.evaluate(({ secretId }) => {

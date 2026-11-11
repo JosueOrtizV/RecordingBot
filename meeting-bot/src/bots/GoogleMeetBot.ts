@@ -223,73 +223,6 @@ export class GoogleMeetBot extends MeetBotBase {
 
     this.page = await createBrowserContext(url, this._correlationId, 'google', this.currentSlot?.cdpUrl);
 
-    // Inject WebRTC & HTMLMediaElement audio hook before navigating so all remote meeting audio tracks are captured directly
-    await this.page.addInitScript(() => {
-      try {
-        if ((window as any).__rbPCHooked) return;
-        (window as any).__rbPCHooked = true;
-
-        const peerConnections = new Set<RTCPeerConnection>();
-        const mediaElements = new Set<HTMLMediaElement>();
-        (window as any).__rbPeerConnections = peerConnections;
-        (window as any).__rbMediaElements = mediaElements;
-
-        const OrigPeerConnection = window.RTCPeerConnection || (window as any).webkitRTCPeerConnection;
-        if (OrigPeerConnection) {
-          const ProxiedPeerConnection = new Proxy(OrigPeerConnection, {
-            construct(target, args, newTarget) {
-              const pc: RTCPeerConnection = Reflect.construct(target, args, newTarget);
-              peerConnections.add(pc);
-              pc.addEventListener('track', () => {
-                try {
-                  (window as any).__rbSyncAudioTracks?.();
-                } catch {}
-              });
-              pc.addEventListener('connectionstatechange', () => {
-                if (pc.connectionState === 'closed') {
-                  peerConnections.delete(pc);
-                }
-                try {
-                  (window as any).__rbSyncAudioTracks?.();
-                } catch {}
-              });
-              return pc;
-            },
-          });
-          window.RTCPeerConnection = ProxiedPeerConnection;
-          if ((window as any).webkitRTCPeerConnection) {
-            (window as any).webkitRTCPeerConnection = ProxiedPeerConnection;
-          }
-        }
-
-        const origPlay = HTMLMediaElement.prototype.play;
-        HTMLMediaElement.prototype.play = function (...args) {
-          mediaElements.add(this);
-          try {
-            (window as any).__rbSyncAudioTracks?.();
-          } catch {}
-          return origPlay.apply(this, args);
-        };
-
-        const srcObjDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'srcObject');
-        if (srcObjDesc && srcObjDesc.set) {
-          Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
-            ...srcObjDesc,
-            set(val) {
-              mediaElements.add(this);
-              const res = srcObjDesc.set!.call(this, val);
-              try {
-                (window as any).__rbSyncAudioTracks?.();
-              } catch {}
-              return res;
-            },
-          });
-        }
-      } catch (e) {
-        console.warn('[MeetBot]: Failed to initialize WebRTC audio hook:', e);
-      }
-    });
-
     // Force Spanish Mexico UI language so captions default to Spanish Mexico
     const meetUrl = new URL(url);
     meetUrl.searchParams.set('hl', 'es-MX');
@@ -1155,178 +1088,43 @@ Comandos de chat disponibles:
           let stream: MediaStream | null = null;
           let mediaRecorder: MediaRecorder | null = null;
           let hasAudioTracks = false;
-          let mixerAudioContext: AudioContext | null = null;
-          let mixerDestination: MediaStreamAudioDestinationNode | null = null;
-          let mixerAnalyser: AnalyserNode | null = null;
-          let mixerSyncInterval: NodeJS.Timeout | null = null;
+          let silenceAudioContext: AudioContext | null = null;
 
           if (!isTranscriptOnlyMode) {
-            // Initialize unified 48kHz playback-buffered WebRTC Audio Mixer
-            mixerAudioContext = new AudioContext({ sampleRate: 48000, latencyHint: 'playback' });
-            await mixerAudioContext.resume().catch(() => {});
-            mixerDestination = mixerAudioContext.createMediaStreamDestination();
-            mixerDestination.channelCount = 2;
-            mixerAnalyser = mixerAudioContext.createAnalyser();
-            mixerAnalyser.fftSize = 256;
-
-            // Continuous zero-gain oscillator keeps the 48kHz audio clock steady with zero timestamp gaps
-            const keepAliveOsc = mixerAudioContext.createOscillator();
-            const zeroGain = mixerAudioContext.createGain();
-            zeroGain.gain.value = 0;
-            keepAliveOsc.connect(zeroGain);
-            zeroGain.connect(mixerDestination);
-            keepAliveOsc.start();
-
-            const connectedSources = new Map<string, { source: MediaStreamAudioSourceNode; track: MediaStreamTrack }>();
-            let fallbackTabSource: MediaStreamAudioSourceNode | null = null;
-            let fallbackDisplayAudioTracks: MediaStreamTrack[] = [];
-
-            const syncWebRTCAudioTracks = () => {
-              if (!mixerAudioContext || !mixerDestination || !mixerAnalyser) return;
-              if (mixerAudioContext.state === 'suspended') {
-                mixerAudioContext.resume().catch(() => {});
-              }
-
-              for (const [trackId, entry] of Array.from(connectedSources.entries())) {
-                if (entry.track.readyState === 'ended') {
-                  try {
-                    entry.source.disconnect();
-                  } catch {}
-                  connectedSources.delete(trackId);
-                }
-              }
-
-              const candidateTracks = new Map<string, MediaStreamTrack>();
-
-              // 1. Collect incoming remote audio tracks directly from RTCPeerConnection receivers
-              const pcs: Set<RTCPeerConnection> | undefined = (window as any).__rbPeerConnections;
-              if (pcs) {
-                for (const pc of Array.from(pcs)) {
-                  try {
-                    if (pc.connectionState === 'closed') continue;
-                    for (const receiver of pc.getReceivers()) {
-                      const t = receiver?.track;
-                      if (t && t.kind === 'audio' && t.readyState === 'live') {
-                        candidateTracks.set(t.id, t);
-                      }
-                    }
-                  } catch {}
-                }
-              }
-
-              // 2. Also collect live audio tracks from <audio>/<video> media elements (deduplicated by track.id)
-              const mediaEls = new Set<HTMLMediaElement>(Array.from((window as any).__rbMediaElements || []));
-              document.querySelectorAll('audio, video').forEach((el) => mediaEls.add(el as HTMLMediaElement));
-              for (const el of Array.from(mediaEls)) {
-                try {
-                  const srcObj = el.srcObject;
-                  if (srcObj instanceof MediaStream) {
-                    for (const t of srcObj.getAudioTracks()) {
-                      if (t && t.kind === 'audio' && t.readyState === 'live') {
-                        candidateTracks.set(t.id, t);
-                      }
-                    }
-                  }
-                } catch {}
-              }
-
-              for (const [trackId, track] of Array.from(candidateTracks.entries())) {
-                if (!connectedSources.has(trackId)) {
-                  try {
-                    const trackStream = new MediaStream([track]);
-                    const srcNode = mixerAudioContext.createMediaStreamSource(trackStream);
-                    srcNode.connect(mixerDestination);
-                    srcNode.connect(mixerAnalyser);
-                    connectedSources.set(trackId, { source: srcNode, track });
-                    track.addEventListener(
-                      'ended',
-                      () => {
-                        try {
-                          srcNode.disconnect();
-                        } catch {}
-                        connectedSources.delete(trackId);
-                      },
-                      { once: true }
-                    );
-                    console.log(`[MeetBot]: Connected direct WebRTC audio track ${trackId} (active tracks: ${connectedSources.size})`);
-                  } catch (err) {
-                    console.warn(`[MeetBot]: Failed to connect WebRTC audio track ${trackId}:`, err);
-                  }
-                }
-              }
-
-              // Use fallback tab audio ONLY if 0 direct WebRTC tracks are currently present
-              if (connectedSources.size > 0) {
-                if (fallbackTabSource) {
-                  try {
-                    fallbackTabSource.disconnect();
-                  } catch {}
-                  fallbackTabSource = null;
-                  console.log('[MeetBot]: Switched from fallback tab audio to direct WebRTC audio tracks.');
-                }
-              } else if (!fallbackTabSource && fallbackDisplayAudioTracks.length > 0) {
-                const liveFallback = fallbackDisplayAudioTracks.filter((t) => t.readyState === 'live');
-                if (liveFallback.length > 0) {
-                  try {
-                    fallbackTabSource = mixerAudioContext.createMediaStreamSource(new MediaStream(liveFallback));
-                    fallbackTabSource.connect(mixerDestination);
-                    fallbackTabSource.connect(mixerAnalyser);
-                    console.log('[MeetBot]: Connected fallback tab audio track to mixer.');
-                  } catch (err) {
-                    console.warn('[MeetBot]: Failed to connect fallback tab audio track:', err);
-                  }
-                }
-              }
-            };
-
-            (window as any).__rbSyncAudioTracks = syncWebRTCAudioTracks;
-            syncWebRTCAudioTracks();
-            mixerSyncInterval = setInterval(syncWebRTCAudioTracks, 1000);
-
-            let streamToRecord: MediaStream;
-
-            if (isAudioOnlyMode && connectedSources.size > 0) {
-              // Pure WebRTC direct audio capture: zero screen/video capture overhead
-              streamToRecord = mixerDestination.stream;
-              hasAudioTracks = mixerDestination.stream.getAudioTracks().length > 0;
-              console.log(`[MeetBot]: Audio-only mode using direct WebRTC mixer (${connectedSources.size} remote tracks connected, 0 screen capture overhead)`);
-            } else {
-              if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-                console.error('MediaDevices or getDisplayMedia not supported in this browser.');
-                return;
-              }
-
-              stream = await (navigator.mediaDevices as any).getDisplayMedia({
-                video: {
-                  displaySurface: 'browser',
-                  width: { ideal: 1280, max: 1920 },
-                  height: { ideal: 720, max: 1080 },
-                  frameRate: { ideal: 30, max: 30 },
-                },
-                audio: {
-                  autoGainControl: false,
-                  channels: 2,
-                  channelCount: 2,
-                  echoCancellation: false,
-                  noiseSuppression: false,
-                },
-                preferCurrentTab: true,
-              });
-
-              fallbackDisplayAudioTracks = stream.getAudioTracks();
-              syncWebRTCAudioTracks();
-
-              const mixerAudioTracks = mixerDestination.stream.getAudioTracks();
-              hasAudioTracks = mixerAudioTracks.length > 0 || fallbackDisplayAudioTracks.length > 0;
-              console.log(`[MeetBot]: Media captured — WebRTC direct tracks: ${connectedSources.size}, tab audio tracks: ${fallbackDisplayAudioTracks.length}, video tracks: ${stream.getVideoTracks().length}`);
-
-              if (isAudioOnlyMode) {
-                streamToRecord = mixerAudioTracks.length > 0 ? mixerDestination.stream : new MediaStream(fallbackDisplayAudioTracks);
-              } else {
-                const audioForVideo = mixerAudioTracks.length > 0 ? mixerAudioTracks : fallbackDisplayAudioTracks;
-                streamToRecord = new MediaStream([...stream.getVideoTracks(), ...audioForVideo]);
-              }
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+              console.error('MediaDevices or getDisplayMedia not supported in this browser.');
+              return;
             }
+
+            stream = await (navigator.mediaDevices as any).getDisplayMedia({
+              video: {
+                displaySurface: 'browser',
+                width: { ideal: 1280, max: 1920 },
+                height: { ideal: 720, max: 1080 },
+                frameRate: { ideal: 30, max: 30 },
+              },
+              audio: {
+                autoGainControl: false,
+                channels: 2,
+                channelCount: 2,
+                echoCancellation: false,
+                noiseSuppression: false,
+              },
+              preferCurrentTab: true,
+            });
+
+            // Check if we actually got audio tracks
+            const audioTracks = stream.getAudioTracks();
+            hasAudioTracks = audioTracks.length > 0;
+
+            if (!hasAudioTracks) {
+              console.warn('No audio tracks available for silence detection. Will rely on presence detection only.');
+            }
+
+            // IMPORTANT: Do NOT call track.stop() on stream.getVideoTracks() during recording.
+            // Stopping the video track of a tab-capture stream in Chromium disrupts the shared
+            // tab-capture session and causes audio buffer dropouts.
+            const streamToRecord = isAudioOnlyMode && hasAudioTracks ? new MediaStream(audioTracks) : stream;
 
             const selectedMimeType = mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
             if (!selectedMimeType) {
@@ -1395,11 +1193,8 @@ Comandos de chat disponibles:
             } catch (error) {
               console.error('Error stopping recorder or flushing final chunks:', error);
             } finally {
-              if (mixerSyncInterval) {
-                clearInterval(mixerSyncInterval);
-              }
-              if (mixerAudioContext) {
-                mixerAudioContext.close().catch(() => {});
+              if (silenceAudioContext) {
+                silenceAudioContext.close().catch(() => {});
               }
               if (stream) {
                 stream.getTracks().forEach((track) => track.stop());
@@ -1693,15 +1488,21 @@ Comandos de chat disponibles:
           }
 
           const detectIncrediblySilentMeeting = () => {
-            // Only run silence detection if we have audio tracks and an active mixer analyser
-            if (!hasAudioTracks || !mixerAnalyser) {
+            // Only run silence detection if we have audio tracks
+            if (!hasAudioTracks || !stream) {
               console.warn('Skipping silence detection - no audio tracks available. This may be due to browser permissions or Google Meet audio sharing settings.');
               console.warn('Meeting will rely on presence detection and max duration timeout.');
               return;
             }
 
             try {
-              const analyser = mixerAnalyser;
+              const audioContext = new AudioContext({ sampleRate: 48000, latencyHint: 'playback' });
+              silenceAudioContext = audioContext;
+              const mediaStreamSource = audioContext.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
+              const analyser = audioContext.createAnalyser();
+              analyser.fftSize = 256;
+
+              mediaStreamSource.connect(analyser);
 
               const dataArray = new Uint8Array(analyser.frequencyBinCount);
               
