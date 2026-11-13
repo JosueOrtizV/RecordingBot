@@ -1267,6 +1267,21 @@ Comandos de chat disponibles:
 
             for (const [trackId, track] of Array.from(candidateTracks.entries())) {
               if (activeWebRTCRecorders.has(trackId)) continue;
+              if (track.muted) {
+                if (!(track as any).__rbUnmuteListenerAdded) {
+                  (track as any).__rbUnmuteListenerAdded = true;
+                  track.addEventListener(
+                    'unmute',
+                    () => {
+                      try {
+                        syncWebRTCAudioRecorders();
+                      } catch {}
+                    },
+                    { once: true }
+                  );
+                }
+                continue;
+              }
               if (activeWebRTCRecorders.size >= 8) break;
 
               const trackIndex = nextWebRTCTrackIndex++;
@@ -1326,12 +1341,19 @@ Comandos de chat disponibles:
                 if (activeWebRTCRecorders.size === 0) return;
               } else {
                 stream = await (navigator.mediaDevices as any).getDisplayMedia({
-                  video: {
-                    displaySurface: 'browser',
-                    width: { ideal: 1280, max: 1920 },
-                    height: { ideal: 720, max: 1080 },
-                    frameRate: { ideal: 30, max: 30 },
-                  },
+                  video: isAudioOnlyMode
+                    ? {
+                        displaySurface: 'browser',
+                        width: { ideal: 320, max: 320 },
+                        height: { ideal: 180, max: 180 },
+                        frameRate: { ideal: 5, max: 5 },
+                      }
+                    : {
+                        displaySurface: 'browser',
+                        width: { ideal: 1280, max: 1920 },
+                        height: { ideal: 720, max: 1080 },
+                        frameRate: { ideal: 30, max: 30 },
+                      },
                   audio: {
                     autoGainControl: false,
                     channels: 2,
