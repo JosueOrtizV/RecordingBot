@@ -25,8 +25,8 @@ default-sample-format = s16le
 default-sample-rate = 48000
 alternate-sample-rate = 48000
 default-sample-channels = 2
-default-fragments = 8
-default-fragment-size-msec = 25
+default-fragments = 4
+default-fragment-size-msec = 10
 exit-idle-time = -1
 flat-volumes = no
 EOF

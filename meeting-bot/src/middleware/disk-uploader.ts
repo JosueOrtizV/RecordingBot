@@ -49,6 +49,7 @@ function isNoSuchUploadError(err: any, userId: string, logger: Logger): boolean 
 export interface IUploader {
   uploadRecordingToRemoteStorage(options?: { forceUpload?: boolean }): Promise<boolean>;
   saveDataToTempFile(data: Buffer): Promise<boolean>;
+  saveWebRTCAudioTrackChunk?(trackIndex: number, offsetMs: number, data: Buffer): Promise<boolean>;
   saveTranscript(content: string): Promise<void>;
   setRecordingDuration(durationSeconds: number): void;
   setRecordingStartedAt?(startedAt: Date): void;
@@ -96,6 +97,13 @@ class DiskUploader implements IUploader {
   private queue: Buffer[];
   private writing: boolean;
   private diskWriteSuccess: LogAggregator;
+  private webrtcTrackStreams = new Map<number, {
+    filePath: string;
+    offsetMs: number;
+    queue: Buffer[];
+    writing: boolean;
+  }>();
+  private mixedWebRTCAudioPath?: string;
 
   private _recordingMode: string = 'video';
   private _startTime: Date;
@@ -264,9 +272,7 @@ class DiskUploader implements IUploader {
     } catch {}
   }
 
-  private writeChunkToDisk(chunk: Buffer): Promise<void> {
-    const filePath = DiskUploader.getFilePath(this._userId, this._tempFileId, this.fileExtension);
-
+  private writeChunkToPath(filePath: string, chunk: Buffer): Promise<void> {
     return new Promise((resolve, reject) => {
       const stream = createWriteStream(filePath, {
         flags: 'a',
@@ -282,6 +288,11 @@ class DiskUploader implements IUploader {
       }
       stream.on('error', reject);
     });
+  }
+
+  private writeChunkToDisk(chunk: Buffer): Promise<void> {
+    const filePath = DiskUploader.getFilePath(this._userId, this._tempFileId, this.fileExtension);
+    return this.writeChunkToPath(filePath, chunk);
   }
 
   private consecutiveWriteFailures = 0;
@@ -358,6 +369,74 @@ class DiskUploader implements IUploader {
       return true;
     } catch(err) {
       this._logger.info('Error: Unable to save the chunk to disk...', this._userId, this._teamId, err);
+      return false;
+    }
+  }
+
+  private async writeWebRTCTrackQueue(
+    trackIndex: number,
+    entry: { filePath: string; offsetMs: number; queue: Buffer[]; writing: boolean }
+  ): Promise<void> {
+    if (entry.writing) return;
+    entry.writing = true;
+
+    try {
+      while (entry.queue.length > 0) {
+        const chunk = entry.queue.shift();
+        if (!chunk) continue;
+
+        let success = false;
+        let attempt = 0;
+        const maxRetries = 3;
+        while (!success && attempt <= maxRetries) {
+          try {
+            await this.writeChunkToPath(entry.filePath, chunk);
+            success = true;
+          } catch (err) {
+            attempt++;
+            if (attempt > maxRetries) {
+              this._logger.error(`[DiskUploader]: Failed writing WebRTC track ${trackIndex} chunk after retries`, { error: err });
+              break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+          }
+        }
+      }
+    } finally {
+      entry.writing = false;
+    }
+  }
+
+  public async saveWebRTCAudioTrackChunk(trackIndex: number, offsetMs: number, data: Buffer): Promise<boolean> {
+    try {
+      if (this.forceUpload || this._isDiscarded) {
+        return false;
+      }
+      if (!this.firstChunkReceivedAt) {
+        this.firstChunkReceivedAt = Date.now();
+      }
+
+      let entry = this.webrtcTrackStreams.get(trackIndex);
+      if (!entry) {
+        const filePath = DiskUploader.getFilePath(this._userId, this._tempFileId, `.webrtc_track_${trackIndex}.webm`);
+        entry = {
+          filePath,
+          offsetMs: Math.max(0, Math.round(offsetMs)),
+          queue: [],
+          writing: false,
+        };
+        this.webrtcTrackStreams.set(trackIndex, entry);
+      }
+
+      entry.queue.push(data);
+      if (!entry.writing) {
+        this.writeWebRTCTrackQueue(trackIndex, entry).catch((err) => {
+          this._logger.warn(`[DiskUploader]: WebRTC track ${trackIndex} queue error:`, err);
+        });
+      }
+      return true;
+    } catch (err) {
+      this._logger.warn(`[DiskUploader]: Unable to queue WebRTC track ${trackIndex} chunk:`, err);
       return false;
     }
   }
@@ -511,6 +590,18 @@ class DiskUploader implements IUploader {
     }
   }
 
+  private async deleteWebRTCTempFilesAsync(): Promise<void> {
+    for (const entry of Array.from(this.webrtcTrackStreams.values())) {
+      if (fs.existsSync(entry.filePath)) {
+        await fs.promises.unlink(entry.filePath).catch(() => {});
+      }
+    }
+    const mixedWavPath = this.mixedWebRTCAudioPath || DiskUploader.getFilePath(this._userId, this._tempFileId, '.webrtc_mixed.wav');
+    if (fs.existsSync(mixedWavPath)) {
+      await fs.promises.unlink(mixedWavPath).catch(() => {});
+    }
+  }
+
   private async deleteTempFileAsync(): Promise<void> {
     try {
       const filePath = DiskUploader.getFilePath(this._userId, this._tempFileId, this.fileExtension);
@@ -523,6 +614,8 @@ class DiskUploader implements IUploader {
       if (this.audioFilePath && fs.existsSync(this.audioFilePath)) {
         await fs.promises.unlink(this.audioFilePath).catch(() => {});
       }
+
+      await this.deleteWebRTCTempFilesAsync();
 
       // Also clean up transcript file if exists
       const folderPath = DiskUploader.getFolderPath(this._userId);
@@ -540,6 +633,10 @@ class DiskUploader implements IUploader {
     this._isDiscarded = true;
     this.writing = false;
     this.queue = [];
+    for (const entry of Array.from(this.webrtcTrackStreams.values())) {
+      entry.writing = false;
+      entry.queue = [];
+    }
     this.lastTranscriptContent = undefined;
     this._logger.info('Discarding recording files and cancelling upload...', this._userId);
     await this.deleteTempFileAsync();
@@ -549,6 +646,17 @@ class DiskUploader implements IUploader {
     try {
       const filePath = DiskUploader.getFilePath(this._userId, this._tempFileId, this.fileExtension);
       if (fs.existsSync(filePath)) return true;
+
+      for (const entry of Array.from(this.webrtcTrackStreams.values())) {
+        if (fs.existsSync(entry.filePath) && fs.statSync(entry.filePath).size > 0) {
+          return true;
+        }
+      }
+
+      const mixedWavPath = DiskUploader.getFilePath(this._userId, this._tempFileId, '.webrtc_mixed.wav');
+      if (fs.existsSync(mixedWavPath) && fs.statSync(mixedWavPath).size > 0) {
+        return true;
+      }
 
       // Defensive check for audio mode or pending audio recordings
       if (this.audioFilePath && fs.existsSync(this.audioFilePath) && fs.statSync(this.audioFilePath).size > 0) {
@@ -579,7 +687,10 @@ class DiskUploader implements IUploader {
 
     const waitPromise = new Promise((resolve) => {
       const waitInterval = setInterval(() => {
-        if (this.writing) {
+        const webrtcWriting = Array.from(this.webrtcTrackStreams.values()).some(
+          (entry) => entry.writing || entry.queue.length > 0
+        );
+        if (this.writing || webrtcWriting) {
           this._logger.info('Waiting on finish temp file write...', userId);
         } else {
           clearInterval(waitInterval);
@@ -603,11 +714,175 @@ class DiskUploader implements IUploader {
     }
   }
 
-  private async ensureRequestedContainer(filePath: string): Promise<void> {
+  private async computeWavMaxAbs(wavPath: string): Promise<number> {
+    const fh = await fs.promises.open(wavPath, 'r');
+    try {
+      const headerBuf = Buffer.alloc(4096);
+      const { bytesRead: headerRead } = await fh.read(headerBuf, 0, headerBuf.length, 0);
+      const dataMarkerIdx = headerBuf.subarray(0, headerRead).indexOf('data');
+      let pos = dataMarkerIdx >= 0 ? dataMarkerIdx + 8 : 44;
+
+      const chunkSize = 65536;
+      const chunkBuf = Buffer.alloc(chunkSize);
+      let maxAbs = 0;
+
+      while (true) {
+        const { bytesRead } = await fh.read(chunkBuf, 0, chunkSize, pos);
+        if (bytesRead < 2) break;
+        const limit = bytesRead - (bytesRead % 2);
+        for (let i = 0; i < limit; i += 2) {
+          const val = Math.abs(chunkBuf.readInt16LE(i));
+          if (val > maxAbs) maxAbs = val;
+        }
+        pos += bytesRead;
+      }
+
+      return maxAbs;
+    } finally {
+      await fh.close();
+    }
+  }
+
+  private async buildMixedWebRTCAudioFile(): Promise<string | null> {
+    const candidates = Array.from(this.webrtcTrackStreams.entries())
+      .sort((a, b) => a[0] - b[0])
+      .filter(([, entry]) => fs.existsSync(entry.filePath) && fs.statSync(entry.filePath).size > 512);
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    const validTracks: Array<{ trackIndex: number; filePath: string; offsetMs: number }> = [];
+    for (const [trackIndex, entry] of candidates) {
+      try {
+        const { stdout: probeOut } = await execFileAsync('ffprobe', [
+          '-v', 'error',
+          '-select_streams', 'a',
+          '-show_entries', 'stream=codec_type,codec_name',
+          '-of', 'json',
+          entry.filePath,
+        ], { maxBuffer: 1024 * 1024 });
+        const streams = JSON.parse(probeOut).streams || [];
+        if (streams.some((s: any) => s.codec_type === 'audio')) {
+          validTracks.push({
+            trackIndex,
+            filePath: entry.filePath,
+            offsetMs: entry.offsetMs,
+          });
+        }
+      } catch (probeErr) {
+        this._logger.warn(`[DiskUploader]: Skipping invalid WebRTC track file ${entry.filePath}:`, probeErr);
+      }
+    }
+
+    if (validTracks.length === 0) {
+      return null;
+    }
+
+    const mixedWavPath = DiskUploader.getFilePath(this._userId, this._tempFileId, '.webrtc_mixed.wav');
+
+    const runMix = async (tracks: Array<{ trackIndex: number; filePath: string; offsetMs: number }>) => {
+      if (tracks.length === 1 && tracks[0].offsetMs < 500) {
+        await execFileAsync('ffmpeg', [
+          '-y',
+          '-i', tracks[0].filePath,
+          '-vn',
+          '-af', 'aresample=async=1:first_pts=0,alimiter=limit=0.95:level=false',
+          '-ac', '2',
+          '-ar', '48000',
+          '-c:a', 'pcm_s16le',
+          mixedWavPath,
+        ], { maxBuffer: 20 * 1024 * 1024 });
+        return;
+      }
+
+      const inputArgs: string[] = [];
+      const filterChains: string[] = [];
+      const inputLabels: string[] = [];
+
+      tracks.forEach((track, idx) => {
+        inputArgs.push('-i', track.filePath);
+        const delayFilter = track.offsetMs >= 500 ? `,adelay=${track.offsetMs}|${track.offsetMs}` : '';
+        filterChains.push(`[${idx}:a]aresample=async=1:first_pts=0${delayFilter}[a${idx}]`);
+        inputLabels.push(`[a${idx}]`);
+      });
+
+      const filterComplex = `${filterChains.join(';')};${inputLabels.join('')}amix=inputs=${tracks.length}:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=0.95:level=false[outa]`;
+
+      await execFileAsync('ffmpeg', [
+        '-y',
+        ...inputArgs,
+        '-filter_complex', filterComplex,
+        '-map', '[outa]',
+        '-ac', '2',
+        '-ar', '48000',
+        '-c:a', 'pcm_s16le',
+        mixedWavPath,
+      ], { maxBuffer: 20 * 1024 * 1024 });
+    };
+
+    try {
+      try {
+        await runMix(validTracks);
+      } catch (mixErr) {
+        if (validTracks.length <= 1) {
+          throw mixErr;
+        }
+        this._logger.warn('[DiskUploader]: Multi-track mix failed; filtering out tracks with empty/undecodable streams and retrying...', mixErr);
+        const decodableTracks: Array<{ trackIndex: number; filePath: string; offsetMs: number }> = [];
+        for (const t of validTracks) {
+          try {
+            await execFileAsync('ffmpeg', ['-v', 'error', '-i', t.filePath, '-f', 'null', '-'], { maxBuffer: 5 * 1024 * 1024 });
+            decodableTracks.push(t);
+          } catch {
+            this._logger.warn(`[DiskUploader]: Excluding undecodable WebRTC track ${t.trackIndex}: ${t.filePath}`);
+          }
+        }
+        if (decodableTracks.length === 0) {
+          throw mixErr;
+        }
+        await runMix(decodableTracks);
+      }
+
+      if (!fs.existsSync(mixedWavPath) || fs.statSync(mixedWavPath).size <= 4096) {
+        await fs.promises.unlink(mixedWavPath).catch(() => {});
+        return null;
+      }
+
+      const webmPath = DiskUploader.getFilePath(this._userId, this._tempFileId, '.webm');
+      const mp4Path = DiskUploader.getFilePath(this._userId, this._tempFileId, '.mp4');
+      const hasFallbackTabFile =
+        (fs.existsSync(webmPath) && fs.statSync(webmPath).size > 10240) ||
+        (fs.existsSync(mp4Path) && fs.statSync(mp4Path).size > 10240);
+
+      if (hasFallbackTabFile) {
+        const maxAbs = await this.computeWavMaxAbs(mixedWavPath);
+        if (maxAbs < 50) {
+          this._logger.warn(`[DiskUploader]: Mixed WebRTC WAV is pure silence (maxAbs=${maxAbs}) and fallback tab recording exists; falling back.`, {
+            tracks: validTracks.length,
+          });
+          await fs.promises.unlink(mixedWavPath).catch(() => {});
+          return null;
+        }
+      }
+
+      this.mixedWebRTCAudioPath = mixedWavPath;
+      this._logger.info(`[DiskUploader]: Built clean mixed WebRTC audio WAV from ${validTracks.length} track(s).`, { mixedWavPath });
+      return mixedWavPath;
+    } catch (err) {
+      this._logger.warn('[DiskUploader]: Failed to mix WebRTC audio tracks:', err);
+      await fs.promises.unlink(mixedWavPath).catch(() => {});
+      return null;
+    }
+  }
+
+  private async ensureRequestedContainer(filePath: string, externalMixedAudioPath?: string | null): Promise<void> {
     if (this.fileExtension !== '.mp4') return;
     if (!fs.existsSync(filePath)) return;
 
-    if (await this.isMp4File(filePath)) {
+    const hasExternalAudio = Boolean(externalMixedAudioPath && fs.existsSync(externalMixedAudioPath));
+
+    if (!hasExternalAudio && await this.isMp4File(filePath)) {
       this._logger.info('[DiskUploader]: File is already a valid MP4 container directly from browser. Skipping transcode.', { filePath });
       return;
     }
@@ -633,6 +908,7 @@ class DiskUploader implements IUploader {
         videoCodec: vStream?.codec_name,
         isH264,
         hasInternalAudio,
+        hasExternalAudio,
         audioCodec: aStream?.codec_name,
       });
     } catch (probeErr) {
@@ -644,6 +920,7 @@ class DiskUploader implements IUploader {
       outputPath,
       isH264,
       hasInternalAudio,
+      hasExternalAudio,
     });
 
     try {
@@ -652,7 +929,24 @@ class DiskUploader implements IUploader {
       // Video input (Input 0)
       ffmpegArgs.push('-i', filePath);
 
-      if (hasInternalAudio) {
+      if (hasExternalAudio) {
+        this._logger.info('[DiskUploader]: Muxing video with clean direct WebRTC mixed audio...');
+        ffmpegArgs.push('-i', externalMixedAudioPath!);
+        ffmpegArgs.push('-map', '0:v:0', '-map', '1:a:0');
+        if (isH264) {
+          ffmpegArgs.push('-c:v', 'copy');
+        } else {
+          ffmpegArgs.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22', '-pix_fmt', 'yuv420p', '-r', '20');
+        }
+        ffmpegArgs.push(
+          '-c:a', 'aac',
+          '-b:a', '192k',
+          '-ar', '48000',
+          '-ac', '2',
+          '-movflags', '+faststart',
+          outputPath
+        );
+      } else if (hasInternalAudio) {
         // Tab audio captured with 100% fidelity directly in Chrome
         this._logger.info('[DiskUploader]: Processing video with pristine internal tab audio...');
         if (isH264) {
@@ -787,6 +1081,13 @@ class DiskUploader implements IUploader {
         // Final attempt to finish the disk write
         await this.writeWithRetries();
       }
+      for (const [trackIndex, entry] of Array.from(this.webrtcTrackStreams.entries())) {
+        if (entry.queue.length > 0 && !entry.writing) {
+          await this.writeWebRTCTrackQueue(trackIndex, entry);
+        }
+      }
+
+      const mixedWebRTCWav = await this.buildMixedWebRTCAudioFile();
 
       if (this._recordingMode === 'audio') {
         // Defensive fallback: check for audio files on disk if this.audioFilePath wasn't set or is missing
@@ -807,12 +1108,16 @@ class DiskUploader implements IUploader {
 
         const webmPath = DiskUploader.getFilePath(this._userId, this._tempFileId, '.webm');
         const mp4Path = DiskUploader.getFilePath(this._userId, this._tempFileId, '.mp4');
+        const hasMixedWebRTC = Boolean(mixedWebRTCWav && fs.existsSync(mixedWebRTCWav) && fs.statSync(mixedWebRTCWav).size > 0);
         const hasWebmAudio = fs.existsSync(webmPath) && fs.statSync(webmPath).size > 0;
         const hasMp4Audio = fs.existsSync(mp4Path) && fs.statSync(mp4Path).size > 0;
         const hasExternalAudio = Boolean(this.audioFilePath && fs.existsSync(this.audioFilePath) && fs.statSync(this.audioFilePath).size > 0);
 
         let inputPath: string | null = null;
-        if (hasWebmAudio) {
+        if (hasMixedWebRTC) {
+          inputPath = mixedWebRTCWav!;
+          this._logger.info('[DiskUploader]: Audio-only mode using mixed direct WebRTC WAV:', mixedWebRTCWav);
+        } else if (hasWebmAudio) {
           inputPath = webmPath;
           this._logger.info('[DiskUploader]: Audio-only mode using browser tab audio WebM:', webmPath);
         } else if (hasMp4Audio) {
@@ -842,6 +1147,10 @@ class DiskUploader implements IUploader {
               if (this.audioFilePath && fs.existsSync(this.audioFilePath)) {
                 await fs.promises.unlink(this.audioFilePath).catch(() => {});
               }
+              await this.deleteWebRTCTempFilesAsync();
+              if (hasWebmAudio && fs.existsSync(webmPath)) {
+                await fs.promises.unlink(webmPath).catch(() => {});
+              }
               this.fileExtension = '.mp3';
               this.contentType = 'audio/mpeg' as ContentType;
             }
@@ -851,8 +1160,9 @@ class DiskUploader implements IUploader {
         }
       } else {
         const filePath = DiskUploader.getFilePath(this._userId, this._tempFileId, this.fileExtension);
-        await this.ensureRequestedContainer(filePath);
+        await this.ensureRequestedContainer(filePath, mixedWebRTCWav);
         await this.ensureWebmDurationMetadata(filePath);
+        await this.deleteWebRTCTempFilesAsync();
       }
 
       const activeFilePath = DiskUploader.getFilePath(this._userId, this._tempFileId, this.fileExtension);
