@@ -1136,6 +1136,7 @@ class DiskUploader implements IUploader {
               '-y',
               '-i', inputPath,
               '-vn',
+              '-af', 'aresample=async=1:first_pts=0',
               '-ac', '2',
               '-c:a', 'libmp3lame',
               '-b:a', '192k',
@@ -1489,6 +1490,45 @@ class DiskUploader implements IUploader {
       return uploadResult;
     } catch (err) {
       this._logger.info('Unable to upload recording to server...', { error: err, userId: this._userId, teamId: this._teamId });
+
+      // Automatic transcript rescue: if media capture/upload failed but a transcript was captured,
+      // preserve the transcript in PostgreSQL so the user never loses the meeting notes.
+      if (this.lastTranscriptContent && this.lastTranscriptContent.trim().length > 0) {
+        this._logger.info('[DiskUploader]: Media upload failed, rescuing captured transcript so meeting notes are preserved...', {
+          userId: this._userId,
+          botId: this._botId,
+          transcriptLength: this.lastTranscriptContent.length,
+        });
+        try {
+          const payload: RecordingCompletedPayload = {
+            recordingId: this._botId ?? this.lastRecordingId ?? this._tempFileId,
+            meetingLink: this._meetingLink,
+            status: 'completed',
+            blobUrl: this.lastUploadedBlobUrl,
+            timestamp: new Date().toISOString(),
+            metadata: {
+              userId: this._userId,
+              teamId: this._teamId,
+              botId: this._botId,
+              contentType: 'text/plain',
+              uploaderType: config.uploaderType,
+              duration: this.recordingDuration || 0,
+              storage: this.lastStorageDetails,
+              namePrefix: this._namePrefix,
+              transcriptText: this.lastTranscriptContent,
+              dedupGroupId: this.dedupGroupId,
+              recordingMode: this._recordingMode,
+              recordingStartedAt: this._recordingStartedAt ? this._recordingStartedAt.toISOString() : undefined,
+            },
+          };
+          await notifyRecordingCompleted(payload, this._logger);
+          await this.deleteTempFileAsync();
+          return true;
+        } catch (rescueErr) {
+          this._logger.warn('[DiskUploader]: Failed to rescue transcript after media failure:', rescueErr);
+        }
+      }
+
       return false;
     }
   }

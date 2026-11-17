@@ -10,6 +10,7 @@ import { JoinParams } from '../bots/AbstractMeetBot';
 import { MicrosoftTeamsBot } from '../bots/MicrosoftTeamsBot';
 import { ZoomBot } from '../bots/ZoomBot';
 import config from '../config';
+import { activeBotRegistry } from '../lib/activeBots';
 
 export class RedisConsumerService {
   private _isRunning: boolean = false;
@@ -204,6 +205,9 @@ export class RedisConsumerService {
         await notifyMeetingJoinFailure(meetingParams, error, logger);
         await messageBroker.acknowledgeProcessingMeetingbotJob(message);
       }, async () => {
+        if (meetingParams.botId) {
+          activeBotRegistry.unregister(meetingParams.botId);
+        }
         await messageBroker.acknowledgeProcessingMeetingbotJob(message);
       });
 

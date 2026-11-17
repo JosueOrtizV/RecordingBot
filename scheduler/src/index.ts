@@ -268,7 +268,8 @@ async function startNotificationListener() {
                SET status = 'failed',
                    error_message = $1,
                    completed_at = NOW()
-               WHERE id::text = $2 OR calendar_event_id = $2 OR id::text = $3 OR calendar_event_id = $3`,
+               WHERE (id::text = $2 OR calendar_event_id = $2 OR id::text = $3 OR calendar_event_id = $3)
+                 AND status != 'completed'`,
               [friendlyReason, recordingId, botId || eventId]
             );
           }
@@ -291,7 +292,8 @@ async function startNotificationListener() {
                SET status = 'failed',
                    error_message = $1,
                    completed_at = NOW()
-               WHERE dedup_group_id::text = $2`,
+               WHERE dedup_group_id::text = $2
+                 AND status != 'completed'`,
               [friendlyReason, activeDedupGroupId]
             );
           }

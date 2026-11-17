@@ -194,7 +194,7 @@ export class GoogleMeetBot extends MeetBotBase {
         this.currentSlot = undefined;
       }
 
-      if (botId) {
+      if (botId && this.isCancelledWithoutSave) {
         activeBotRegistry.unregister(botId);
       }
 
@@ -222,82 +222,6 @@ export class GoogleMeetBot extends MeetBotBase {
     this._logger.info('Launching browser...');
 
     this.page = await createBrowserContext(url, this._correlationId, 'google', this.currentSlot?.cdpUrl);
-
-    // Inject WebRTC & HTMLMediaElement hook before navigating so all remote audio tracks are captured directly
-    await this.page.addInitScript(() => {
-      try {
-        if ((window as any).__rbPCHooked) return;
-        (window as any).__rbPCHooked = true;
-
-        const peerConnections = new Set<RTCPeerConnection>();
-        const mediaElements = new Set<HTMLMediaElement>();
-        (window as any).__rbPeerConnections = peerConnections;
-        (window as any).__rbMediaElements = mediaElements;
-
-        const notifyTrackSync = () => {
-          try {
-            (window as any).__rbSyncWebRTCRecorders?.();
-          } catch {}
-        };
-
-        const OrigPeerConnection = window.RTCPeerConnection || (window as any).webkitRTCPeerConnection;
-        if (OrigPeerConnection) {
-          const origPcAddEventListener = OrigPeerConnection.prototype.addEventListener;
-          OrigPeerConnection.prototype.addEventListener = function (type: any, listener: any, options?: any) {
-            try {
-              if (this && !peerConnections.has(this)) {
-                peerConnections.add(this);
-                origPcAddEventListener.call(this, 'track', notifyTrackSync);
-                notifyTrackSync();
-              }
-            } catch {}
-            return origPcAddEventListener.call(this, type, listener, options);
-          };
-
-          const ProxiedPeerConnection = new Proxy(OrigPeerConnection, {
-            construct(target, args, newTarget) {
-              const pc: RTCPeerConnection = Reflect.construct(target, args, newTarget);
-              peerConnections.add(pc);
-              origPcAddEventListener.call(pc, 'track', notifyTrackSync);
-              origPcAddEventListener.call(pc, 'connectionstatechange', () => {
-                if (pc.connectionState === 'closed') {
-                  peerConnections.delete(pc);
-                }
-                notifyTrackSync();
-              });
-              return pc;
-            },
-          });
-
-          window.RTCPeerConnection = ProxiedPeerConnection;
-          if ((window as any).webkitRTCPeerConnection) {
-            (window as any).webkitRTCPeerConnection = ProxiedPeerConnection;
-          }
-        }
-
-        const origPlay = HTMLMediaElement.prototype.play;
-        HTMLMediaElement.prototype.play = function (...args) {
-          mediaElements.add(this);
-          notifyTrackSync();
-          return origPlay.apply(this, args);
-        };
-
-        const srcObjDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'srcObject');
-        if (srcObjDesc && srcObjDesc.set) {
-          Object.defineProperty(HTMLMediaElement.prototype, 'srcObject', {
-            ...srcObjDesc,
-            set(val) {
-              mediaElements.add(this);
-              const res = srcObjDesc.set!.call(this, val);
-              notifyTrackSync();
-              return res;
-            },
-          });
-        }
-      } catch (err) {
-        console.warn('[MeetBot]: Failed to initialize WebRTC audio hook:', err);
-      }
-    });
 
     // Force Spanish Mexico UI language so captions default to Spanish Mexico
     const meetUrl = new URL(url);
@@ -412,10 +336,30 @@ export class GoogleMeetBot extends MeetBotBase {
         });
         await retryActionWithWait(
           'Waiting for the input field',
-          async () => await this.page.locator(nameInputSelector).first().waitFor({ state: 'visible', timeout: 10000 }),
+          async () => {
+            const currentUrl = this.page.url();
+            const blockedOrRedirected = !currentUrl.includes('meet.google.com') || await this.page.evaluate(() => {
+              const txt = document.body?.innerText || '';
+              return txt.includes('No puedes unirte a esta videollamada') ||
+                     txt.includes("You can't join this video call") ||
+                     txt.includes('Volviendo a la pantalla principal') ||
+                     txt.includes('Returning to home screen');
+            }).catch(() => false);
+
+            if (blockedOrRedirected) {
+              this._logger.warn('Google Meet showed blocked/redirected screen before name input; reloading meeting URL immediately...', {
+                currentUrl,
+                joinRequestAttempt,
+              });
+              await this.page.goto(finalUrl, { waitUntil: 'domcontentloaded' });
+              await waitForPreJoinReady().catch(() => {});
+            }
+
+            await this.page.locator(nameInputSelector).first().waitFor({ state: 'visible', timeout: 10000 });
+          },
           this._logger,
           3,
-          15000,
+          5000,
           async () => {
             await uploadDebugImage(await this.page.screenshot({ type: 'png', fullPage: true }), 'text-input-field-wait', userId, this._logger, botId);
           }
@@ -1166,11 +1110,6 @@ Comandos de chat disponibles:
           await (window as any).screenAppSendData(slightlySecretId, base64);
         };
 
-        const sendWebRTCTrackChunkToServer = async (trackIndex: number, offsetMs: number, chunk: Blob) => {
-          const base64 = await blobToBase64(chunk);
-          await (window as any).screenAppSendWebRTCAudioTrackData(slightlySecretId, trackIndex, offsetMs, base64);
-        };
-
         async function startRecording() {
           console.log('Participant detection is active immediately; silence detection activates after', activateInactivityDetectionAfter);
 
@@ -1184,14 +1123,6 @@ Comandos de chat disponibles:
           let stream: MediaStream | null = null;
           let mediaRecorder: MediaRecorder | null = null;
           let hasAudioTracks = false;
-          let silenceAudioContext: AudioContext | null = null;
-          let webrtcSyncInterval: NodeJS.Timeout | null = null;
-          let nextWebRTCTrackIndex = 0;
-          const activeWebRTCRecorders = new Map<string, {
-            trackIndex: number;
-            recorder: MediaRecorder;
-            track: MediaStreamTrack;
-          }>();
 
           const stopRecorderSafely = (recorder: MediaRecorder | null): Promise<void> => {
             if (!recorder || recorder.state === 'inactive') {
@@ -1215,204 +1146,83 @@ Comandos de chat disponibles:
             });
           };
 
-          const syncWebRTCAudioRecorders = () => {
-            if (isTranscriptOnlyMode || isStoppingRecording) return;
-
-            for (const [trackId, entry] of Array.from(activeWebRTCRecorders.entries())) {
-              if (entry.track.readyState === 'ended') {
-                if (entry.recorder.state !== 'inactive') {
-                  try {
-                    entry.recorder.stop();
-                  } catch {}
-                }
-                activeWebRTCRecorders.delete(trackId);
-              }
-            }
-
-            const candidateTracks = new Map<string, MediaStreamTrack>();
-
-            const pcs: Set<RTCPeerConnection> | undefined = (window as any).__rbPeerConnections;
-            if (pcs) {
-              for (const pc of Array.from(pcs)) {
-                try {
-                  if (pc.connectionState === 'closed') continue;
-                  for (const receiver of pc.getReceivers()) {
-                    const track = receiver?.track;
-                    if (track && track.kind === 'audio' && track.readyState === 'live') {
-                      candidateTracks.set(track.id, track);
-                    }
-                  }
-                } catch {}
-              }
-            }
-
-            const mediaEls = new Set<HTMLMediaElement>(Array.from((window as any).__rbMediaElements || []));
-            document.querySelectorAll('audio, video').forEach((el) => mediaEls.add(el as HTMLMediaElement));
-            for (const el of Array.from(mediaEls)) {
-              try {
-                const srcObj = el.srcObject;
-                if (srcObj instanceof MediaStream) {
-                  for (const track of srcObj.getAudioTracks()) {
-                    if (track && track.kind === 'audio' && track.readyState === 'live') {
-                      candidateTracks.set(track.id, track);
-                    }
-                  }
-                }
-              } catch {}
-            }
-
-            const preferredMimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-              ? 'audio/webm;codecs=opus'
-              : 'audio/webm';
-
-            for (const [trackId, track] of Array.from(candidateTracks.entries())) {
-              if (activeWebRTCRecorders.has(trackId)) continue;
-              if (track.muted) {
-                if (!(track as any).__rbUnmuteListenerAdded) {
-                  (track as any).__rbUnmuteListenerAdded = true;
-                  track.addEventListener(
-                    'unmute',
-                    () => {
-                      try {
-                        syncWebRTCAudioRecorders();
-                      } catch {}
-                    },
-                    { once: true }
-                  );
-                }
-                continue;
-              }
-              if (activeWebRTCRecorders.size >= 8) break;
-
-              const trackIndex = nextWebRTCTrackIndex++;
-              const elapsedMs = Date.now() - recordingStartedAt;
-              const offsetMs = elapsedMs < 2500 ? 0 : elapsedMs;
-
-              try {
-                const mr = new MediaRecorder(new MediaStream([track]), {
-                  mimeType: preferredMimeType,
-                  audioBitsPerSecond: 128000,
-                });
-
-                mr.ondataavailable = (event: BlobEvent) => {
-                  if (!event.data || !event.data.size) return;
-                  const chunk = event.data;
-                  chunkUploadChain = chunkUploadChain.then(async () => {
-                    try {
-                      await sendWebRTCTrackChunkToServer(trackIndex, offsetMs, chunk);
-                    } catch (err) {
-                      console.error(`Error uploading WebRTC track ${trackIndex} chunk:`, err);
-                    }
-                  });
-                };
-
-                mr.start(1000);
-                if (isRecordingPaused && mr.state === 'recording') {
-                  try {
-                    mr.pause();
-                  } catch {}
-                }
-
-                activeWebRTCRecorders.set(trackId, { trackIndex, recorder: mr, track });
-                hasAudioTracks = true;
-                console.log(`[MeetBot]: Started direct WebRTC MediaRecorder on track #${trackIndex} (${trackId}, offsetMs=${offsetMs})`);
-              } catch (err) {
-                console.warn(`[MeetBot]: Failed starting direct WebRTC MediaRecorder on track ${trackId}:`, err);
-              }
-            }
-          };
-
           if (!isTranscriptOnlyMode) {
-            (window as any).__rbSyncWebRTCRecorders = syncWebRTCAudioRecorders;
-            webrtcSyncInterval = setInterval(syncWebRTCAudioRecorders, 500);
-
-            syncWebRTCAudioRecorders();
-            const waitStart = Date.now();
-            while (activeWebRTCRecorders.size === 0 && Date.now() - waitStart < 2000) {
-              await new Promise((r) => setTimeout(r, 200));
-              syncWebRTCAudioRecorders();
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+              console.error('MediaDevices or getDisplayMedia not supported in this browser.');
+              return;
             }
 
-            if (isAudioOnlyMode && activeWebRTCRecorders.size > 0) {
-              console.log(`[MeetBot]: Audio-only mode using ${activeWebRTCRecorders.size} direct C++ WebRTC MediaRecorders (0 getDisplayMedia overhead)`);
-            } else {
-              if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-                console.error('MediaDevices or getDisplayMedia not supported in this browser.');
-                if (activeWebRTCRecorders.size === 0) return;
-              } else {
-                stream = await (navigator.mediaDevices as any).getDisplayMedia({
-                  video: isAudioOnlyMode
-                    ? {
-                        displaySurface: 'browser',
-                        width: { ideal: 320, max: 320 },
-                        height: { ideal: 180, max: 180 },
-                        frameRate: { ideal: 5, max: 5 },
-                      }
-                    : {
-                        displaySurface: 'browser',
-                        width: { ideal: 1280, max: 1920 },
-                        height: { ideal: 720, max: 1080 },
-                        frameRate: { ideal: 30, max: 30 },
-                      },
-                  audio: {
-                    autoGainControl: false,
-                    channels: 2,
-                    channelCount: 2,
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                  },
-                  preferCurrentTab: true,
-                });
-
-                // Check if we actually got audio tracks
-                const audioTracks = stream.getAudioTracks();
-                hasAudioTracks = hasAudioTracks || audioTracks.length > 0;
-
-                if (!hasAudioTracks) {
-                  console.warn('No audio tracks available for silence detection. Will rely on presence detection only.');
-                }
-
-                // IMPORTANT: Do NOT call track.stop() on stream.getVideoTracks() during recording.
-                // Stopping the video track of a tab-capture stream in Chromium disrupts the shared
-                // tab-capture session and causes audio buffer dropouts.
-                const streamToRecord = isAudioOnlyMode && audioTracks.length > 0 ? new MediaStream(audioTracks) : stream;
-
-                const selectedMimeType = mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
-                if (!selectedMimeType) {
-                  throw new Error(`MediaRecorder does not support requested codecs: ${mimeTypes.join(', ')}`);
-                }
-
-                console.log(`Media Recorder will use ${selectedMimeType} codecs (Mode: ${recordingMode})...`);
-                const recorderOptions: any = {
-                  mimeType: selectedMimeType,
-                  ...(isAudioOnlyMode
-                    ? { audioBitsPerSecond: 128000 }
-                    : { videoBitsPerSecond: 2500000, audioBitsPerSecond: 128000 }),
-                };
-                mediaRecorder = new MediaRecorder(streamToRecord, recorderOptions);
-                console.log(`Media Recorder actual mime type: ${mediaRecorder.mimeType}`);
-
-                mediaRecorder.ondataavailable = (event: BlobEvent) => {
-                  if (!event.data.size) {
-                    console.warn('Received empty chunk...');
-                    return;
+            stream = await (navigator.mediaDevices as any).getDisplayMedia({
+              video: isAudioOnlyMode
+                ? {
+                    displaySurface: 'browser',
+                    width: { ideal: 320, max: 320 },
+                    height: { ideal: 180, max: 180 },
+                    frameRate: { ideal: 5, max: 5 },
                   }
+                : {
+                    displaySurface: 'browser',
+                    width: { ideal: 1280, max: 1920 },
+                    height: { ideal: 720, max: 1080 },
+                    frameRate: { ideal: 30, max: 30 },
+                  },
+              audio: {
+                autoGainControl: false,
+                channels: 2,
+                channelCount: 2,
+                echoCancellation: false,
+                noiseSuppression: false,
+              },
+              preferCurrentTab: true,
+            });
 
-                  const chunk = event.data;
-                  chunkUploadChain = chunkUploadChain.then(async () => {
-                    try {
-                      await sendChunkToServer(chunk);
-                    } catch (error) {
-                      console.error('Error uploading chunk:', error);
-                    }
-                  });
-                };
+            // Check if we actually got audio tracks
+            const audioTracks = stream.getAudioTracks();
+            hasAudioTracks = audioTracks.length > 0;
 
-                // Start recording with 2-second intervals
-                const chunkDuration = 2000;
-                mediaRecorder.start(chunkDuration);
-              }
+            if (!hasAudioTracks) {
+              console.warn('No audio tracks available for silence detection. Will rely on presence detection only.');
             }
+
+            // IMPORTANT: Do NOT call track.stop() on stream.getVideoTracks() during recording.
+            // Stopping the video track of a tab-capture stream in Chromium disrupts the shared
+            // tab-capture session and causes audio buffer dropouts.
+            const streamToRecord = isAudioOnlyMode && audioTracks.length > 0 ? new MediaStream(audioTracks) : stream;
+
+            const selectedMimeType = mimeTypes.find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
+            if (!selectedMimeType) {
+              throw new Error(`MediaRecorder does not support requested codecs: ${mimeTypes.join(', ')}`);
+            }
+
+            console.log(`Media Recorder will use ${selectedMimeType} codecs (Mode: ${recordingMode})...`);
+            const recorderOptions: any = {
+              mimeType: selectedMimeType,
+              ...(isAudioOnlyMode
+                ? { audioBitsPerSecond: 128000 }
+                : { videoBitsPerSecond: 2500000, audioBitsPerSecond: 128000 }),
+            };
+            mediaRecorder = new MediaRecorder(streamToRecord, recorderOptions);
+            console.log(`Media Recorder actual mime type: ${mediaRecorder.mimeType}`);
+
+            mediaRecorder.ondataavailable = (event: BlobEvent) => {
+              if (!event.data.size) {
+                console.warn('Received empty chunk...');
+                return;
+              }
+
+              const chunk = event.data;
+              chunkUploadChain = chunkUploadChain.then(async () => {
+                try {
+                  await sendChunkToServer(chunk);
+                } catch (error) {
+                  console.error('Error uploading chunk:', error);
+                }
+              });
+            };
+
+            // Start recording with 2-second intervals
+            const chunkDuration = 2000;
+            mediaRecorder.start(chunkDuration);
           } else {
             console.log('[MeetBot]: Transcript-only mode: MediaRecorder not started.');
           }
@@ -1430,28 +1240,14 @@ Comandos de chat disponibles:
             isStoppingRecording = true;
             const recordedDurationSeconds = Math.max(1, Math.round((Date.now() - recordingStartedAt) / 1000));
 
-            if (webrtcSyncInterval) {
-              clearInterval(webrtcSyncInterval);
-              webrtcSyncInterval = null;
-            }
-            (window as any).__rbSyncWebRTCRecorders = undefined;
-
             try {
-              const stopPromises: Promise<void>[] = [];
               if (mediaRecorder) {
-                stopPromises.push(stopRecorderSafely(mediaRecorder));
+                await stopRecorderSafely(mediaRecorder);
               }
-              for (const entry of Array.from(activeWebRTCRecorders.values())) {
-                stopPromises.push(stopRecorderSafely(entry.recorder));
-              }
-              await Promise.all(stopPromises);
               await chunkUploadChain;
             } catch (error) {
               console.error('Error stopping recorder or flushing final chunks:', error);
             } finally {
-              if (silenceAudioContext) {
-                silenceAudioContext.close().catch(() => {});
-              }
               if (stream) {
                 stream.getTracks().forEach((track) => track.stop());
               }
@@ -1496,15 +1292,6 @@ Comandos de chat disponibles:
                 console.warn('[MeetBot]: mediaRecorder.pause() error:', e);
               }
             }
-            for (const entry of Array.from(activeWebRTCRecorders.values())) {
-              if (entry.recorder.state === 'recording') {
-                try {
-                  entry.recorder.pause();
-                } catch (e) {
-                  console.warn(`[MeetBot]: WebRTC recorder #${entry.trackIndex} pause() error:`, e);
-                }
-              }
-            }
             try {
               (window as any).screenAppMeetPaused?.(slightlySecretId);
             } catch (e) {}
@@ -1520,15 +1307,6 @@ Comandos de chat disponibles:
                 console.log('[MeetBot]: mediaRecorder.resume() succeeded.');
               } catch (e) {
                 console.warn('[MeetBot]: mediaRecorder.resume() error:', e);
-              }
-            }
-            for (const entry of Array.from(activeWebRTCRecorders.values())) {
-              if (entry.recorder.state === 'paused') {
-                try {
-                  entry.recorder.resume();
-                } catch (e) {
-                  console.warn(`[MeetBot]: WebRTC recorder #${entry.trackIndex} resume() error:`, e);
-                }
               }
             }
             try {
@@ -1760,125 +1538,12 @@ Comandos de chat disponibles:
           }
 
           const detectIncrediblySilentMeeting = () => {
-            const pcsSet: Set<RTCPeerConnection> | undefined = (window as any).__rbPeerConnections;
-            const hasPeerConnections = Boolean(pcsSet && pcsSet.size > 0);
-            const hasStreamAudio = Boolean(stream && stream.getAudioTracks().length > 0);
-
-            if (!hasAudioTracks || (!hasPeerConnections && !hasStreamAudio)) {
-              console.warn('Skipping silence detection - no audio tracks available. This may be due to browser permissions or Google Meet audio sharing settings.');
-              console.warn('Meeting will rely on presence detection and max duration timeout.');
-              return;
-            }
-
-            try {
-              let analyser: AnalyserNode | null = null;
-              let dataArray: Uint8Array | null = null;
-
-              if (!hasPeerConnections && hasStreamAudio && stream) {
-                const audioContext = new AudioContext({ sampleRate: 48000, latencyHint: 'playback' });
-                silenceAudioContext = audioContext;
-                const mediaStreamSource = audioContext.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
-                analyser = audioContext.createAnalyser();
-                analyser.fftSize = 256;
-                mediaStreamSource.connect(analyser);
-                dataArray = new Uint8Array(analyser.frequencyBinCount);
-              }
-
-              // Sliding silence period
-              let silenceDuration = 0;
-              let totalChecks = 0;
-              let audioActivitySum = 0;
-              let lastActivityLogTime = 0;
-
-              // Audio gain/volume
-              const silenceThreshold = 10;
-
-              let monitor = true;
-
-              const monitorSilence = () => {
-                if (isStoppingRecording) {
-                  monitor = false;
-                  return;
-                }
-                try {
-                  let audioActivity = 0;
-                  const currentPcs: Set<RTCPeerConnection> | undefined = (window as any).__rbPeerConnections;
-                  if (currentPcs && currentPcs.size > 0) {
-                    const levels: number[] = [];
-                    for (const pc of Array.from(currentPcs)) {
-                      try {
-                        if (pc.connectionState === 'closed') continue;
-                        for (const receiver of pc.getReceivers()) {
-                          if (receiver?.track?.kind === 'audio' && typeof receiver.getSynchronizationSources === 'function') {
-                            const sources = receiver.getSynchronizationSources();
-                            if (sources && sources.length > 0) {
-                              levels.push(Math.max(...sources.map((s: any) => (s.audioLevel || 0) * 100)));
-                            }
-                          }
-                        }
-                      } catch {}
-                    }
-                    audioActivity = levels.length > 0 ? Math.max(...levels) : 0;
-                  } else if (analyser && dataArray) {
-                    analyser.getByteFrequencyData(dataArray as any);
-                    audioActivity = dataArray.reduce((a, b) => a + b) / dataArray.length;
-                  }
-
-                  audioActivitySum += audioActivity;
-                  totalChecks++;
-
-                  // Log silence detection status once per minute, including how close
-                  // we are to the inactivity-limit exit so it's clear when this would fire.
-                  const now = Date.now();
-                  if (now - lastActivityLogTime > 60000) {
-                    const avgActivity = (audioActivitySum / totalChecks).toFixed(2);
-                    const silentForSec = Math.floor(silenceDuration / 1000);
-                    const limitSec = Math.floor(inactivityLimit / 1000);
-                    const exitInSec = Math.max(0, limitSec - silentForSec);
-                    const status = audioActivity < silenceThreshold
-                      ? `silentFor: ${silentForSec}s of ${limitSec}s, will exit in ${exitInSec}s if silence continues`
-                      : 'audio active (counter reset)';
-                    console.log('Silence detection check - Avg:', avgActivity, 'Current:', audioActivity.toFixed(2), 'Threshold:', silenceThreshold, '|', status);
-                    lastActivityLogTime = now;
-                  }
-
-                  if (audioActivity < silenceThreshold) {
-                    if (isRecordingPaused) {
-                      silenceDuration = 0;
-                    } else if (hasSeenOtherParticipant && aloneSince === null) {
-                      // Other participants are in the call! Do not exit due to silence while people are in the room.
-                      silenceDuration = 0;
-                    } else {
-                      silenceDuration += 100; // Check every 100ms
-                      if (silenceDuration >= inactivityLimit) {
-                          console.warn('Detected silence in Google Meet and ending the recording on team:', userId, teamId);
-                          console.log('Silence detection stats - Avg audio activity:', (audioActivitySum / totalChecks).toFixed(2), 'Checks performed:', totalChecks);
-                          monitor = false;
-                          stopTheRecording();
-                      }
-                    }
-                  } else {
-                    silenceDuration = 0;
-                  }
-
-                  if (monitor && !isStoppingRecording) {
-                    // Recursively queue the next check
-                    setTimeout(monitorSilence, 100);
-                  }
-                } catch (error) {
-                  console.error('Error in silence monitoring:', error);
-                  console.warn('Silence detection failed - will rely on presence detection and max duration timeout.');
-                  // Stop monitoring on error
-                  monitor = false;
-                }
-              };
-
-              // Go silence monitor
-              monitorSilence();
-            } catch (error) {
-              console.error('Failed to initialize silence detection:', error);
-              console.warn('Silence detection initialization failed - will rely on presence detection and max duration timeout.');
-            }
+            // Do NOT create a WebAudio AudioContext on the getDisplayMedia stream:
+            // connecting createMediaStreamSource to the captured tab audio track causes
+            // renderer audio thread lock contention and ~20ms buffer underruns.
+            // Automatic meeting exit is handled by detectLoneParticipantResilient()
+            // (when the bot is the only participant left) and by the max duration timer.
+            console.log('[MeetBot]: Relying on participant presence detection and max duration timer (zero WebAudio contention).');
           };
 
           /**
@@ -1972,54 +1637,52 @@ Comandos de chat disponibles:
                   if (aria.includes('cerrar') || aria.includes('close') || aria.includes('descartar') || aria.includes('dismiss') || txt === 'cerrar' || txt === 'close' || matIcon === 'close') {
                     console.log('Found modal dialog close button, dismissing dialog...', btn);
                     btn.click();
+                  } else if (/Got it|Ok|Entendido/i.test(txt)) {
+                    btn.click();
                   }
                 }
 
-                const buttons = document.querySelectorAll('button');
-                const dismissButtons = Array.from(buttons).filter((button) => button?.offsetParent !== null && /Got it|Ok|Entendido/i.test(button?.textContent || ''));
-                if (dismissButtons.length > 0) {
-                  console.log('Found dismiss button, clicking it...', dismissButtons[0]);
-                  dismissButtons[0].click();
-                }
+                // Only scan full DOM for initial device notifications during the first 60s of the call
+                // to avoid synchronous layout reflows and full-DOM text serialization during recording.
+                if (Date.now() - recordingStartedAt < 60000) {
+                  const isChatOpenOrSending = Boolean((window as any).__rbSendingChatMessage) ||
+                    Array.from(document.querySelectorAll('textarea')).some(ta => (ta as HTMLElement).offsetParent !== null);
+                  const bodyText = document.body.textContent || '';
+                  if (!isChatOpenOrSending && (
+                      bodyText.includes('Microphone not found') ||
+                      bodyText.includes('Make sure your microphone is plugged in') ||
+                      bodyText.includes('Camera not found') ||
+                      bodyText.includes('Make sure your camera is plugged in') ||
+                      bodyText.includes('No se encontró el micrófono') ||
+                      bodyText.includes('No se encontró un micrófono') ||
+                      bodyText.includes('No se encontró una cámara') ||
+                      bodyText.includes('No se encontró un altavoz') ||
+                      bodyText.includes('Speaker not found') ||
+                      bodyText.includes('Asegúrate de que el micrófono') ||
+                      bodyText.includes('Asegúrate de que la cámara') ||
+                      bodyText.includes('Mikrofonproblem') ||
+                      bodyText.includes('Kameraproblem'))) {
+                    console.log('Found device notification (microphone/camera/speaker), attempting to dismiss...');
+                    const allButtons = Array.from(document.querySelectorAll('button'));
+                    const closeButtons = allButtons.filter((btn) => {
+                      const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+                      if (ariaLabel.includes('chat') || ariaLabel.includes('panel')) return false;
+                      if (btn.closest('aside, [role="complementary"], [aria-label*="chat" i], [aria-label*="panel" i]')) return false;
+                      const matIcon = btn.querySelector('i')?.textContent?.trim().toLowerCase() || '';
+                      return ariaLabel.includes('close') ||
+                             ariaLabel.includes('dismiss') ||
+                             ariaLabel.includes('cerrar') ||
+                             ariaLabel.includes('descartar') ||
+                             matIcon === 'close';
+                    });
 
-                // Dismiss "Microphone not found" and "Camera not found" notifications (English, Spanish, German)
-                const isChatOpenOrSending = Boolean((window as any).__rbSendingChatMessage) ||
-                  Array.from(document.querySelectorAll('textarea')).some(ta => (ta as HTMLElement).offsetParent !== null);
-                const bodyText = document.body.textContent || '';
-                if (!isChatOpenOrSending && (
-                    bodyText.includes('Microphone not found') ||
-                    bodyText.includes('Make sure your microphone is plugged in') ||
-                    bodyText.includes('Camera not found') ||
-                    bodyText.includes('Make sure your camera is plugged in') ||
-                    bodyText.includes('No se encontró el micrófono') ||
-                    bodyText.includes('No se encontró un micrófono') ||
-                    bodyText.includes('No se encontró una cámara') ||
-                    bodyText.includes('No se encontró un altavoz') ||
-                    bodyText.includes('Speaker not found') ||
-                    bodyText.includes('Asegúrate de que el micrófono') ||
-                    bodyText.includes('Asegúrate de que la cámara') ||
-                    bodyText.includes('Mikrofonproblem') ||
-                    bodyText.includes('Kameraproblem'))) {
-                  console.log('Found device notification (microphone/camera/speaker), attempting to dismiss...');
-                  const allButtons = Array.from(document.querySelectorAll('button'));
-                  const closeButtons = allButtons.filter((btn) => {
-                    const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
-                    if (ariaLabel.includes('chat') || ariaLabel.includes('panel')) return false;
-                    if (btn.closest('aside, [role="complementary"], [aria-label*="chat" i], [aria-label*="panel" i]')) return false;
-                    const matIcon = btn.querySelector('i')?.textContent?.trim().toLowerCase() || '';
-                    return ariaLabel.includes('close') ||
-                           ariaLabel.includes('dismiss') ||
-                           ariaLabel.includes('cerrar') ||
-                           ariaLabel.includes('descartar') ||
-                           matIcon === 'close';
-                  });
-
-                  closeButtons.forEach((btn) => {
-                    if (btn?.offsetParent !== null) {
-                      console.log('Clicking close button for device notification...');
-                      btn.click();
-                    }
-                  });
+                    closeButtons.forEach((btn) => {
+                      if (btn?.offsetParent !== null) {
+                        console.log('Clicking close button for device notification...');
+                        btn.click();
+                      }
+                    });
+                  }
                 }
               } catch(error) {
                 lastDimissError = error;
@@ -2029,7 +1692,7 @@ Comandos de chat disponibles:
                   dismissModalErrorCount = 0;
                 }
               }
-            }, 2000);
+            }, 5000);
           };
 
           const detectMeetingIsOnAValidPage = () => {

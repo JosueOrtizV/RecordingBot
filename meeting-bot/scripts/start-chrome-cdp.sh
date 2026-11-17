@@ -14,31 +14,11 @@ BASE_PROXY_PORT=9223
 rm -rf /tmp/.X*-lock /tmp/.X11-unix/X* /tmp/nginx.pid || true
 mkdir -p /tmp/.X11-unix
 
-# Start PulseAudio cleanly with 48kHz virtual speaker (no speaker-to-mic loopback)
+# Start PulseAudio with native timer-based scheduling (auto_null, no fragment overrides)
 if command -v pulseaudio >/dev/null 2>&1; then
   pulseaudio --kill >/dev/null 2>&1 || true
   rm -rf /tmp/pulse-* /run/user/1001/pulse "${HOME:-/home/chrome}/.config/pulse" || true
-  mkdir -p "${HOME:-/home/chrome}/.config/pulse"
-
-  cat >"${HOME:-/home/chrome}/.config/pulse/daemon.conf" <<EOF
-default-sample-format = s16le
-default-sample-rate = 48000
-alternate-sample-rate = 48000
-default-sample-channels = 2
-default-fragments = 4
-default-fragment-size-msec = 10
-exit-idle-time = -1
-flat-volumes = no
-EOF
-
-  pulseaudio -D --exit-idle-time=-1 || true
-
-  # Unload suspend-on-idle so sinks NEVER sleep or drop audio buffers
-  pactl unload-module module-suspend-on-idle >/dev/null 2>&1 || true
-
-  # Virtual speaker sink (rate=48000 format=s16le channels=2)
-  pactl load-module module-null-sink sink_name=virtual_speaker rate=48000 format=s16le channels=2 sink_properties=device.description="Virtual_Speaker" >/dev/null 2>&1 || true
-  pactl set-default-sink virtual_speaker >/dev/null 2>&1 || true
+  pulseaudio --start --exit-idle-time=-1 || true
 fi
 
 xvfb_pids=()

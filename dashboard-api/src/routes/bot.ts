@@ -271,13 +271,23 @@ router.get('/status', requireAuth, async (req: Request, res: Response) => {
         if (activeResp.ok) {
           const activeData: any = await activeResp.json();
           const liveBotIds = new Set<string>((activeData.activeBots || []).map((b: any) => b.botId));
+          const liveDedupGroupIds = new Set<string>();
+          const liveMeetingUrls = new Set<string>();
+          for (const r of allActiveRes.rows) {
+            if (liveBotIds.has(r.id)) {
+              if (r.dedup_group_id) liveDedupGroupIds.add(r.dedup_group_id);
+              if (r.meeting_url) liveMeetingUrls.add(normalizeMeetingUrl(r.meeting_url));
+            }
+          }
 
           let hadZombies = false;
           for (const r of allActiveRes.rows) {
             if (['recording', 'paused'].includes(r.status)) {
               const ageMs = Date.now() - new Date(r.started_at || r.created_at).getTime();
-              // If older than 90s and bot is not alive in meeting-bot worker
-              if (ageMs > 90_000 && !liveBotIds.has(r.id)) {
+              const isGroupAlive = Boolean(r.dedup_group_id && liveDedupGroupIds.has(r.dedup_group_id));
+              const isUrlAlive = Boolean(r.meeting_url && liveMeetingUrls.has(normalizeMeetingUrl(r.meeting_url)));
+              // If older than 180s and neither this recording nor its dedup group/meeting URL is alive in meeting-bot worker
+              if (ageMs > 180_000 && !liveBotIds.has(r.id) && !isGroupAlive && !isUrlAlive) {
                 hadZombies = true;
                 await query(
                   `UPDATE recordings
