@@ -1136,7 +1136,6 @@ class DiskUploader implements IUploader {
               '-y',
               '-i', inputPath,
               '-vn',
-              '-af', 'aresample=async=1:first_pts=0',
               '-ac', '2',
               '-c:a', 'libmp3lame',
               '-b:a', '192k',

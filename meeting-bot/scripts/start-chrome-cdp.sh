@@ -14,11 +14,12 @@ BASE_PROXY_PORT=9223
 rm -rf /tmp/.X*-lock /tmp/.X11-unix/X* /tmp/nginx.pid || true
 mkdir -p /tmp/.X11-unix
 
-# Start PulseAudio with native timer-based scheduling (auto_null, no fragment overrides)
+# Start PulseAudio with native timer-based scheduling (auto_null, never suspended)
 if command -v pulseaudio >/dev/null 2>&1; then
   pulseaudio --kill >/dev/null 2>&1 || true
   rm -rf /tmp/pulse-* /run/user/1001/pulse "${HOME:-/home/chrome}/.config/pulse" || true
   pulseaudio --start --exit-idle-time=-1 || true
+  pactl unload-module module-suspend-on-idle >/dev/null 2>&1 || true
 fi
 
 xvfb_pids=()
