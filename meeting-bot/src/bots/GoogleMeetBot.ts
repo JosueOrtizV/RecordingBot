@@ -173,6 +173,14 @@ export class GoogleMeetBot extends MeetBotBase {
 
       await patchBotStatus({ botId, eventId, provider: 'google', status: _state, token: bearerToken }, this._logger);
     } catch(error) {
+      if (this.isCancelledWithoutSave) {
+        this._logger.info('Recording was cancelled without save during join/lobby. Discarding files and skipping retry...', { botId, userId });
+        await uploader.discard().catch(() => {});
+        _state.push('cancelled' as any);
+        await patchBotStatus({ botId, eventId, provider: 'google', status: _state, token: bearerToken }, this._logger);
+        return;
+      }
+
       if (!_state.includes('finished') && !_state.includes('failed'))
         _state.push('failed');
 
@@ -461,6 +469,12 @@ export class GoogleMeetBot extends MeetBotBase {
 
           waitInterval = setInterval(async () => {
             try {
+              if (this.isCancelledWithoutSave || !this.page || this.page.isClosed()) {
+                clearInterval(waitInterval);
+                clearTimeout(waitTimeout);
+                resolveWaiting(false);
+                return;
+              }
               const currentUrl = this.page.url();
               if (!currentUrl.includes('meet.google.com')) {
                 redirectedFromMeetUrl = currentUrl;
@@ -661,6 +675,10 @@ export class GoogleMeetBot extends MeetBotBase {
       });
 
       const waitingAtLobbySuccess = await waitAtLobbyPromise;
+      if (this.isCancelledWithoutSave) {
+        this._logger.info('Stop without save requested while in lobby; exiting joinMeeting immediately.');
+        return;
+      }
       if (waitingAtLobbySuccess) {
         joinedMeeting = true;
         break;

@@ -202,6 +202,9 @@ export class RedisConsumerService {
         }
 
       }, logger, 0, async (error) => {
+        if (meetingParams.botId) {
+          activeBotRegistry.unregister(meetingParams.botId);
+        }
         await notifyMeetingJoinFailure(meetingParams, error, logger);
         await messageBroker.acknowledgeProcessingMeetingbotJob(message);
       }, async () => {

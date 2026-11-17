@@ -421,9 +421,17 @@ router.post('/recordings/:id/stop', requireAuth, async (req: Request, res: Respo
       );
 
       const isMultipleActiveUsers = groupActiveRes.rows.length > 1;
+      const isPendingLobby = rec.status === 'pending';
+      const isManualOwner = Boolean(
+        rec.owner_user_id &&
+        rec.owner_user_id === userId &&
+        String(rec.calendar_event_id || '').startsWith('manual_')
+      );
 
-      // If user wants to discard without saving (!save) AND other users are still in the meeting:
-      if (!save && isMultipleActiveUsers) {
+      // If user wants to discard without saving (!save) AND other users are still in the meeting,
+      // only unlink this user if the bot is already recording AND this user did not manually dispatch the bot.
+      // If the bot is still in 'pending' (lobby) or the manual owner cancels it, stop the bot completely.
+      if (!save && isMultipleActiveUsers && !isPendingLobby && !isManualOwner) {
         await query(
           `UPDATE recordings
            SET status = 'cancelled',
@@ -441,27 +449,6 @@ router.post('/recordings/:id/stop', requireAuth, async (req: Request, res: Respo
       }
     }
 
-    // Check if truly pending in Redis queue
-    const removedFromPending = await removePendingMeetingJob(rec.id);
-    if (removedFromPending) {
-      await query(
-        `UPDATE recordings
-         SET status = 'cancelled',
-             error_message = 'Cancelada por el usuario antes de iniciar',
-             completed_at = NOW()
-         WHERE id = $1`,
-        [rec.id]
-      );
-
-      res.json({
-        success: true,
-        message: 'La reunión estaba en cola y ha sido cancelada exitosamente.',
-      });
-      return;
-    }
-
-    // Case: Bot is active in meeting-bot
-    const meetingBotUrl = process.env.MEETING_BOT_URL || 'http://meeting-bot:3000';
     let targetBotId = rec.id;
 
     // If this is a secondary user in a dedup group, find the primary botId
@@ -474,6 +461,39 @@ router.post('/recordings/:id/stop', requireAuth, async (req: Request, res: Respo
         targetBotId = primaryRes.rows[0].id;
       }
     }
+
+    // Check if truly pending in Redis queue
+    const removedFromPending = await removePendingMeetingJob(targetBotId);
+    if (removedFromPending) {
+      await query(
+        `UPDATE recordings
+         SET status = 'cancelled',
+             error_message = 'Cancelada por el usuario antes de iniciar',
+             completed_at = NOW()
+         WHERE id = $1`,
+        [rec.id]
+      );
+
+      if (rec.dedup_group_id) {
+        await query(
+          `UPDATE recordings
+           SET status = 'cancelled',
+               error_message = 'Cancelada por el usuario antes de iniciar',
+               completed_at = NOW()
+           WHERE dedup_group_id = $1 AND status IN ('pending', 'recording')`,
+          [rec.dedup_group_id]
+        );
+      }
+
+      res.json({
+        success: true,
+        message: 'La reunión estaba en cola y ha sido cancelada exitosamente.',
+      });
+      return;
+    }
+
+    // Case: Bot is active in meeting-bot
+    const meetingBotUrl = process.env.MEETING_BOT_URL || 'http://meeting-bot:3000';
 
     try {
       await fetch(`${meetingBotUrl}/bot/${targetBotId}/stop`, {
